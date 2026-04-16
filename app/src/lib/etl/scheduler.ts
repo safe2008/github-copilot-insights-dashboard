@@ -22,6 +22,7 @@ async function runIngestion() {
   try {
     const { getGitHubConfig, getSyncScopeConfig } = await import("@/lib/db/settings");
     const { ingestCopilotUsage } = await import("@/lib/etl/ingest");
+    const { syncEnterpriseTeams } = await import("@/lib/etl/enterprise-teams");
     const { db } = await import("@/lib/db");
     const { ingestionLog } = await import("@/lib/db/schema");
     const { token, enterpriseSlug } = await getGitHubConfig();
@@ -46,6 +47,17 @@ async function runIngestion() {
     console.info(
       `Scheduled ETL ingestion complete — fetched: ${result.recordsFetched}, inserted: ${result.recordsInserted}, skipped: ${result.recordsSkipped}`
     );
+
+    // Sync enterprise teams + memberships alongside usage data
+    try {
+      console.info("Scheduled enterprise teams sync started");
+      const teamsResult = await syncEnterpriseTeams({ enterpriseSlug, token, source: "scheduled" });
+      console.info(
+        `Scheduled enterprise teams sync complete — teams: ${teamsResult.teamsSynced}, members: ${teamsResult.totalMembers}`
+      );
+    } catch (teamsErr) {
+      console.error("Scheduled enterprise teams sync failed:", teamsErr);
+    }
   } catch (err) {
     console.error("Scheduled ETL ingestion failed:", err);
   }
