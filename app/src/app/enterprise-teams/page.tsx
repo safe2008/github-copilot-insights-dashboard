@@ -17,7 +17,8 @@ interface Team {
 }
 
 interface TeamMember {
-  login: string;
+  userId: number;
+  userLogin: string;
   role: string;
 }
 
@@ -43,7 +44,7 @@ export default function EnterpriseTeamsPage() {
       const res = await fetch("/api/enterprise-teams");
       if (!res.ok) throw new Error(`Failed to fetch teams: ${res.status}`);
       const data = await res.json();
-      setTeams(data);
+      setTeams(Array.isArray(data.teams) ? data.teams : []);
     } catch (err) {
       console.error("[enterprise-teams] Error fetching teams:", err);
       setTeams([]);
@@ -65,7 +66,7 @@ export default function EnterpriseTeamsPage() {
       const res = await fetch(`/api/enterprise-teams/${teamId}/members`);
       if (!res.ok) throw new Error(`Failed to fetch members: ${res.status}`);
       const data = await res.json();
-      setMembers(data);
+      setMembers(Array.isArray(data.members) ? data.members : []);
     } catch (err) {
       console.error("[enterprise-teams] Error fetching members:", err);
       setMembers([]);
@@ -278,11 +279,11 @@ export default function EnterpriseTeamsPage() {
                         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                           {members.map((member) => (
                             <tr
-                              key={member.login}
+                              key={member.userId}
                               className="transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50"
                             >
                               <td className="whitespace-nowrap px-4 py-2 font-medium text-gray-900 dark:text-gray-100">
-                                {member.login}
+                                {member.userLogin}
                               </td>
                               <td className="whitespace-nowrap px-4 py-2 text-gray-500 dark:text-gray-400">
                                 <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-300">

@@ -31,7 +31,12 @@ export async function GET() {
       )
       .orderBy(dimEnterpriseTeam.teamName);
 
-    return NextResponse.json({ teams });
+    return NextResponse.json({
+      teams: teams.map((t) => ({
+        ...t,
+        memberCount: Number(t.memberCount),
+      })),
+    });
   } catch (err) {
     console.error("Failed to fetch enterprise teams:", err);
     return NextResponse.json(
