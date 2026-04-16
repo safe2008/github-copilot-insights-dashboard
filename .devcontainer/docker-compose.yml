@@ -24,17 +24,23 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: copilot_insights
-    # Minimal dev-optimised config: durability guarantees traded for speed/reliability in codespaces
+    # Dev config: durability off for speed; tuned for ETL bulk-import from GitHub API
     command: >
       postgres
         -c fsync=off
         -c synchronous_commit=off
         -c full_page_writes=off
-        -c shared_buffers=128MB
-        -c work_mem=4MB
+        -c shared_buffers=256MB
+        -c work_mem=16MB
+        -c maintenance_work_mem=64MB
+        -c effective_cache_size=512MB
         -c max_connections=50
         -c wal_level=minimal
         -c archive_mode=off
+        -c max_wal_size=512MB
+        -c checkpoint_timeout=15min
+        -c checkpoint_completion_target=0.9
+        -c default_statistics_target=200
         -c log_min_duration_statement=1000
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d copilot_insights"]
@@ -42,7 +48,7 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
-    shm_size: 256m
+    shm_size: 512m
     networks:
       - devnet
 
