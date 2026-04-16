@@ -48,13 +48,14 @@
   }
 
   /* PDF export: hide interactive elements via container class */
-  .pdf-capturing button:not([data-pdf-export-btn]),
-  .pdf-capturing select,
-  .pdf-capturing input {
-    display: none !important;
-  }
   .pdf-capturing [data-pdf-hide],
   .pdf-capturing .pdf-hide {
+    display: none !important;
+  }
+  /* Only hide buttons/inputs/selects inside the report body — not in the header (first child) */
+  .pdf-capturing > :not(:first-child) button:not([data-pdf-export-btn]),
+  .pdf-capturing > :not(:first-child) select,
+  .pdf-capturing > :not(:first-child) input {
     display: none !important;
   }
 }
