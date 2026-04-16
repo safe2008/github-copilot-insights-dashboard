@@ -240,13 +240,9 @@ export default function PullRequestsPage() {
       <PageHeader
         title={t("pullRequests.title")}
         subtitle={t("pullRequests.subtitle")}
-        actions={
-          <>
-            <PdfButton />
-            <ReportFilters onApply={fetchData} onDataRange={setDataRange} showUserFilter={false} sourceLabel="Organization Aggregate" />
-          </>
-        }
+        actions={<PdfButton />}
       />
+      <ReportFilters onApply={fetchData} onDataRange={setDataRange} showUserFilter={false} sourceLabel="Organization Aggregate" />
       <DataSourceBanner sourceLabel="Organization aggregate data (includes pull request metrics)" />
 
       {loading ? (

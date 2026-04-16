@@ -227,7 +227,7 @@ export default function PremiumRequestsPage() {
         subtitle={t("premiumRequests.subtitle")}
         actions={<PdfButton />}
       />
-      <DataSourceBanner sourceLabel="GitHub Premium Request Billing API" />
+      <DataSourceBanner sourceLabel="GitHub Premium Request Billing API" live />
 
       {/* Month Selector */}
       <div className="flex items-center gap-3">

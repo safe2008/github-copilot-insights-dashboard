@@ -281,13 +281,9 @@ export default function CodeGenerationPage() {
       <PageHeader
         title={t("codeGen.title")}
         subtitle={`${t("codeGen.subtitle")}${appliedFilters ? ` — ${formatDateRangeLabel(appliedFilters.startDate, appliedFilters.endDate)}` : ""}`}
-        actions={
-          <>
-            <PdfButton />
-            <ReportFilters onApply={fetchData} onDataRange={setDataRange} />
-          </>
-        }
+        actions={<PdfButton />}
       />
+      <ReportFilters onApply={fetchData} onDataRange={setDataRange} />
       <DataSourceBanner />
 
       {loading && !data ? (

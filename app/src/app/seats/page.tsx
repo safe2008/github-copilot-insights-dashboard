@@ -291,7 +291,7 @@ export default function BusinessValuePage() {
         subtitle={t("seats.subtitle")}
         actions={<PdfButton />}
       />
-      <DataSourceBanner sourceLabel="GitHub Copilot Billing / Seats API" />
+      <DataSourceBanner sourceLabel="GitHub Copilot Billing / Seats API" live />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">

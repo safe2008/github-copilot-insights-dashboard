@@ -270,13 +270,9 @@ export default function AgentsPage() {
       <PageHeader
         title={t("agents.title")}
         subtitle={`${t("agents.subtitle")}${appliedFilters ? ` — ${formatDateRangeLabel(appliedFilters.startDate, appliedFilters.endDate)}` : ""}`}
-        actions={
-          <>
-            <PdfButton />
-            <ReportFilters onApply={fetchData} onDataRange={setDataRange} />
-          </>
-        }
+        actions={<PdfButton />}
       />
+      <ReportFilters onApply={fetchData} onDataRange={setDataRange} />
       <DataSourceBanner />
 
       {loading && !data ? (

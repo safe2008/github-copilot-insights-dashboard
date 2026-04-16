@@ -338,13 +338,9 @@ export default function CliPage() {
       <PageHeader
         title={t("cli.title")}
         subtitle={`${t("cli.subtitle")}${appliedFilters ? ` — ${formatDateRangeLabel(appliedFilters.startDate, appliedFilters.endDate)}` : ""}`}
-        actions={
-          <>
-            <PdfButton />
-            <ReportFilters onApply={fetchData} onDataRange={setDataRange} />
-          </>
-        }
+        actions={<PdfButton />}
       />
+      <ReportFilters onApply={fetchData} onDataRange={setDataRange} />
       <DataSourceBanner />
 
       {loading && !data ? (

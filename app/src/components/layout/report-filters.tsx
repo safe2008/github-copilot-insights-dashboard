@@ -411,29 +411,39 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
 
 /* ── DataSourceBanner ── */
 
-export function DataSourceBanner({ sourceLabel }: { sourceLabel?: string } = {}) {
+/**
+ * Shows the data source label and optionally the synced data range / last-sync timestamp.
+ *
+ * Pass `live` to indicate the page fetches data directly from a live API — when true the
+ * banner only renders the source label without range or last-sync info.
+ */
+export function DataSourceBanner({ sourceLabel, live }: { sourceLabel?: string; live?: boolean } = {}) {
   const { t } = useTranslation();
   const [range, setRange] = useState<DataRange | null>(null);
 
   useEffect(() => {
+    if (live) return;              // live pages don't need the sync range
     fetch("/api/data-range")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) setRange(d); })
       .catch((err) => console.error("Failed to load data range:", err));
-  }, []);
+  }, [live]);
 
-  if (!range || !range.dataStart) return null;
+  // For synced pages, wait until range is available
+  if (!live && (!range || !range.dataStart)) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
       <span>
         <span className="font-medium text-gray-600 dark:text-gray-300">{t("dataSource.label")}</span> {sourceLabel ?? t("dataSource.defaultSource")}
       </span>
-      <span>
-        <span className="font-medium text-gray-600 dark:text-gray-300">{t("dataSource.range")}</span>{" "}
-        {fmtDateShort(range.dataStart)} – {fmtDateShort(range.dataEnd!)}
-      </span>
-      {range.lastSyncAt && (
+      {!live && range && range.dataStart && (
+        <span>
+          <span className="font-medium text-gray-600 dark:text-gray-300">{t("dataSource.range")}</span>{" "}
+          {fmtDateShort(range.dataStart)} – {fmtDateShort(range.dataEnd!)}
+        </span>
+      )}
+      {!live && range?.lastSyncAt && (
         <span>
           <span className="font-medium text-gray-600 dark:text-gray-300">{t("dataSource.lastSync")}</span>{" "}
           {fmtDateTime(range.lastSyncAt)} ({range.lastSyncSource})

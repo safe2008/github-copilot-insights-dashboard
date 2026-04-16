@@ -409,13 +409,9 @@ export default function CopilotUsagePage() {
       <PageHeader
         title={t("dashboard.title")}
         subtitle={`${t("dashboard.subtitle")}${appliedFilters ? ` — ${formatDateRangeLabel(appliedFilters.startDate, appliedFilters.endDate)}` : ""}`}
-        actions={
-          <>
-            <PdfButton />
-            <ReportFilters onApply={fetchData} onDataRange={setDataRange} />
-          </>
-        }
+        actions={<PdfButton />}
       />
+      <ReportFilters onApply={fetchData} onDataRange={setDataRange} />
       <DataSourceBanner />
 
       {loading && !data ? (

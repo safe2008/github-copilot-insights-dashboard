@@ -107,7 +107,7 @@ export default function EnterpriseTeamsPage() {
         title={t("teams.title")}
         subtitle={t("teams.subtitle")}
       />
-      <DataSourceBanner sourceLabel="GitHub Enterprise Teams API" />
+      <DataSourceBanner sourceLabel="GitHub Enterprise Teams API" live />
 
       {/* About this page */}
       <div className="flex items-start gap-3 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
