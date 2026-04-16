@@ -47,6 +47,40 @@ export const dimOrg = pgTable("dim_org", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const dimEnterpriseTeam = pgTable(
+  "dim_enterprise_team",
+  {
+    teamId: serial("team_id").primaryKey(),
+    githubTeamId: integer("github_team_id").notNull(),
+    teamName: varchar("team_name", { length: 255 }).notNull(),
+    teamSlug: varchar("team_slug", { length: 255 }).notNull(),
+    description: text("description"),
+    enterpriseId: integer("enterprise_id").references(() => dimEnterprise.enterpriseId),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_dim_ent_team_github_id").on(table.githubTeamId),
+    index("idx_dim_ent_team_slug").on(table.teamSlug),
+  ]
+);
+
+export const dimEnterpriseTeamMember = pgTable(
+  "dim_enterprise_team_member",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => dimEnterpriseTeam.teamId),
+    userId: integer("user_id").notNull(),
+    userLogin: varchar("user_login", { length: 255 }).notNull(),
+    role: varchar("role", { length: 50 }).default("member").notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_dim_ent_team_member_unique").on(table.teamId, table.userId),
+    index("idx_dim_ent_team_member_user").on(table.userId),
+  ]
+);
+
 export const dimUser = pgTable(
   "dim_user",
   {

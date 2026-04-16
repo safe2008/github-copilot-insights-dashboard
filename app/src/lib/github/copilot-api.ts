@@ -11,6 +11,8 @@ import type {
   CopilotMetricsReportResponse,
   CopilotAggregateRecord,
   EnterpriseOrg,
+  EnterpriseTeam,
+  EnterpriseTeamMember,
 } from "@/types/copilot-api";
 
 const GITHUB_API_BASE = "https://api.github.com";
@@ -544,4 +546,76 @@ export async function fetchMultiOrgCopilotUsage(opts: {
     orgs,
     apiRequestCount,
   };
+}
+
+/**
+ * Lists all enterprise teams (paginated).
+ * Requires `read:enterprise` scope.
+ * Docs: https://docs.github.com/en/enterprise-cloud@latest/rest/enterprise-teams
+ */
+export async function listEnterpriseTeams(opts: {
+  enterpriseSlug: string;
+  token: string;
+  onLog?: (msg: string) => void;
+}): Promise<{ teams: EnterpriseTeam[]; apiRequestCount: number }> {
+  let apiRequestCount = 0;
+  const allTeams: EnterpriseTeam[] = [];
+  let page = 1;
+  const perPage = 100;
+  const log = opts.onLog ?? (() => {});
+
+  log(`Fetching enterprise teams for "${opts.enterpriseSlug}"…`);
+  console.info(`Fetching enterprise teams for "${opts.enterpriseSlug}"…`);
+
+  while (true) {
+    const url = `${GITHUB_API_BASE}/enterprises/${encodeURIComponent(opts.enterpriseSlug)}/teams?per_page=${perPage}&page=${page}`;
+    const response = await fetchWithRetry(url, opts.token, MAX_RETRIES);
+    apiRequestCount++;
+
+    const teams: EnterpriseTeam[] = await response.json();
+    allTeams.push(...teams);
+
+    log(`Fetched page ${page}: ${teams.length} team(s) (total: ${allTeams.length})`);
+
+    if (teams.length < perPage) break;
+    page++;
+  }
+
+  console.info(`Found ${allTeams.length} enterprise team(s) in ${apiRequestCount} API request(s)`);
+  log(`Enterprise team discovery complete: ${allTeams.length} team(s) found`);
+  return { teams: allTeams, apiRequestCount };
+}
+
+/**
+ * Lists all members of an enterprise team (paginated).
+ * Docs: https://docs.github.com/en/enterprise-cloud@latest/rest/enterprise-teams/enterprise-team-members
+ */
+export async function listEnterpriseTeamMembers(opts: {
+  enterpriseSlug: string;
+  teamSlug: string;
+  token: string;
+  onLog?: (msg: string) => void;
+}): Promise<{ members: EnterpriseTeamMember[]; apiRequestCount: number }> {
+  let apiRequestCount = 0;
+  const allMembers: EnterpriseTeamMember[] = [];
+  let page = 1;
+  const perPage = 100;
+  const log = opts.onLog ?? (() => {});
+
+  log(`Fetching members for enterprise team "${opts.teamSlug}"…`);
+
+  while (true) {
+    const url = `${GITHUB_API_BASE}/enterprises/${encodeURIComponent(opts.enterpriseSlug)}/teams/${encodeURIComponent(opts.teamSlug)}/members?per_page=${perPage}&page=${page}`;
+    const response = await fetchWithRetry(url, opts.token, MAX_RETRIES);
+    apiRequestCount++;
+
+    const members: EnterpriseTeamMember[] = await response.json();
+    allMembers.push(...members);
+
+    if (members.length < perPage) break;
+    page++;
+  }
+
+  log(`Team "${opts.teamSlug}": ${allMembers.length} member(s)`);
+  return { members: allMembers, apiRequestCount };
 }
