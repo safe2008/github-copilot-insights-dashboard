@@ -14,6 +14,11 @@
     "5432": { "label": "PostgreSQL", "onAutoForward": "silent" }
   },
   "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "16gb",
+    "storage": "32gb"
+  },
   "customizations": {
     "vscode": {
       "extensions": [
