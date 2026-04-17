@@ -46,6 +46,17 @@ import {
 } from "./transform";
 import { eq, sql, and, inArray } from "drizzle-orm";
 
+const BATCH_SIZE = 200;
+
+/** Split an array into chunks of the given size. */
+function chunk<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
 
 interface IngestOptions {
   enterpriseSlug: string;
@@ -94,8 +105,9 @@ async function ensureDimensions(
   // Also handle org IDs from records (e.g. from file uploads)
   const orgGithubIds = extractUniqueOrgIds(records);
   if (orgGithubIds.length > 0) {
-    const orgIdValues = orgGithubIds.map((ghOrgId) => ({ orgName: String(ghOrgId) }));
-    await db.insert(dimOrg).values(orgIdValues).onConflictDoNothing({ target: dimOrg.orgName });
+    for (const batch of chunk(orgGithubIds.map((ghOrgId) => ({ orgName: String(ghOrgId) })), BATCH_SIZE)) {
+      await db.insert(dimOrg).values(batch).onConflictDoNothing({ target: dimOrg.orgName });
+    }
   }
 
   // Handle _orgLogin from per-org fetches
@@ -104,8 +116,9 @@ async function ensureDimensions(
     if (r._orgLogin) orgLogins.add(r._orgLogin);
   }
   if (orgLogins.size > 0) {
-    const orgLoginValues = [...orgLogins].map((login) => ({ orgName: login }));
-    await db.insert(dimOrg).values(orgLoginValues).onConflictDoNothing({ target: dimOrg.orgName });
+    for (const batch of chunk([...orgLogins].map((login) => ({ orgName: login })), BATCH_SIZE)) {
+      await db.insert(dimOrg).values(batch).onConflictDoNothing({ target: dimOrg.orgName });
+    }
   }
 
   const orgs = await db.select().from(dimOrg);
@@ -113,34 +126,42 @@ async function ensureDimensions(
   // Also map githubOrgId → orgId
   const orgIdToKeyMap = new Map(orgs.filter(o => o.githubOrgId).map((o) => [String(o.githubOrgId), o.orgId]));
 
-  // IDEs — batch insert
+  // IDEs — batch insert with chunking
   const ideNames = extractUniqueIdes(records);
   if (ideNames.length > 0) {
-    await db.insert(dimIde).values(ideNames.map((name) => ({ ideName: name }))).onConflictDoNothing({ target: dimIde.ideName });
+    for (const batch of chunk(ideNames.map((name) => ({ ideName: name })), BATCH_SIZE)) {
+      await db.insert(dimIde).values(batch).onConflictDoNothing({ target: dimIde.ideName });
+    }
   }
   const ides = await db.select().from(dimIde);
   const ideMap = new Map(ides.map((i) => [i.ideName, i.ideId]));
 
-  // Features — batch insert
+  // Features — batch insert with chunking
   const featureNames = extractUniqueFeatures(records);
   if (featureNames.length > 0) {
-    await db.insert(dimFeature).values(featureNames.map((name) => ({ featureName: name }))).onConflictDoNothing({ target: dimFeature.featureName });
+    for (const batch of chunk(featureNames.map((name) => ({ featureName: name })), BATCH_SIZE)) {
+      await db.insert(dimFeature).values(batch).onConflictDoNothing({ target: dimFeature.featureName });
+    }
   }
   const features = await db.select().from(dimFeature);
   const featureMap = new Map(features.map((f) => [f.featureName, f.featureId]));
 
-  // Languages — batch insert
+  // Languages — batch insert with chunking
   const langNames = extractUniqueLanguages(records);
   if (langNames.length > 0) {
-    await db.insert(dimLanguage).values(langNames.map((name) => ({ languageName: name }))).onConflictDoNothing({ target: dimLanguage.languageName });
+    for (const batch of chunk(langNames.map((name) => ({ languageName: name })), BATCH_SIZE)) {
+      await db.insert(dimLanguage).values(batch).onConflictDoNothing({ target: dimLanguage.languageName });
+    }
   }
   const langs = await db.select().from(dimLanguage);
   const langMap = new Map(langs.map((l) => [l.languageName, l.languageId]));
 
-  // Models — batch insert
+  // Models — batch insert with chunking
   const modelNames = extractUniqueModels(records);
   if (modelNames.length > 0) {
-    await db.insert(dimModel).values(modelNames.map((name) => ({ modelName: name }))).onConflictDoNothing();
+    for (const batch of chunk(modelNames.map((name) => ({ modelName: name })), BATCH_SIZE)) {
+      await db.insert(dimModel).values(batch).onConflictDoNothing();
+    }
   }
   const models = await db.select().from(dimModel);
   const modelMap = new Map(models.map((m) => [m.modelName, m.modelId]));

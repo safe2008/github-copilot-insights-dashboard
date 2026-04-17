@@ -41,15 +41,15 @@ export function safeCompare(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
 
-  if (bufA.length !== bufB.length) {
-    // Pad the shorter buffer to match length, then compare to avoid timing leak
-    const padded = Buffer.alloc(bufA.length, 0);
-    bufB.copy(padded, 0, 0, Math.min(bufB.length, bufA.length));
-    timingSafeEqual(bufA, padded);
-    return false;
-  }
+  // Always compare equal-length buffers to prevent timing leaks
+  const maxLen = Math.max(bufA.length, bufB.length);
+  const paddedA = Buffer.alloc(maxLen, 0);
+  const paddedB = Buffer.alloc(maxLen, 0);
+  bufA.copy(paddedA);
+  bufB.copy(paddedB);
 
-  return timingSafeEqual(bufA, bufB);
+  const equal = timingSafeEqual(paddedA, paddedB);
+  return equal && bufA.length === bufB.length;
 }
 
 /* ── Session Token (HMAC-signed, stateless) ── */
