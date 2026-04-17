@@ -1,15 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  ArcElement,
-  Tooltip,
-  Legend,
-} from "chart.js";
+import "@/lib/chart-registry";
 import { Bar, Doughnut } from "react-chartjs-2";
 import { useChartOptions } from "@/lib/theme/chart-theme";
 import { useTranslation } from "@/lib/i18n/locale-provider";
@@ -22,9 +14,6 @@ import { DataSourceBanner } from "@/components/layout/report-filters";
 import { AlertTriangle, Settings } from "lucide-react";
 import Link from "next/link";
 
-ChartJS.register(
-  CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend
-);
 
 /* ── Types ── */
 

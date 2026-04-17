@@ -1,22 +1,13 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Filler,
-  Tooltip,
-  Legend,
-} from "chart.js";
+import "@/lib/chart-registry";
 import { Bar } from "react-chartjs-2";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { usePdfExport } from "@/components/ui/pdf-export";
 import { useChartOptions } from "@/lib/theme/chart-theme";
 import { useTranslation } from "@/lib/i18n/locale-provider";
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Filler, Tooltip, Legend);
 
 /* ── Types ── */
 

@@ -31,6 +31,39 @@ class NonRetryableError extends Error {
   }
 }
 
+/** Known Node.js network error codes that indicate a transient connection issue. */
+const NETWORK_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ECONNABORTED",
+  "ENOTFOUND",
+  "ETIMEDOUT",
+  "ENETUNREACH",
+  "EPIPE",
+  "EAI_AGAIN",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
+
+/**
+ * Detect transient network errors using the structured `cause.code` property
+ * set by Node.js / undici rather than brittle string matching on messages.
+ */
+function isTransientNetworkError(err: Error): boolean {
+  // Node.js wraps low-level errors in a TypeError with a `cause` property
+  const cause = (err as NodeJS.ErrnoException).cause as NodeJS.ErrnoException | undefined;
+  if (cause?.code && NETWORK_ERROR_CODES.has(cause.code)) return true;
+
+  // Direct errno-style errors (e.g. from net module)
+  const directCode = (err as NodeJS.ErrnoException).code;
+  if (directCode && NETWORK_ERROR_CODES.has(directCode)) return true;
+
+  // fetch() failures surface as TypeError in Node.js
+  if (err.name === "TypeError" && /fetch|network|socket/i.test(err.message)) return true;
+
+  return false;
+}
+
 interface FetchOptions {
   enterpriseSlug: string;
   token: string;
@@ -182,12 +215,7 @@ async function fetchWithRetry(
       if (lastError instanceof NonRetryableError) {
         throw lastError;
       }
-      const isNetworkError = lastError.message.includes("fetch failed") || 
-        lastError.message.includes("ECONNREFUSED") ||
-        lastError.message.includes("ECONNRESET") ||
-        lastError.message.includes("ETIMEDOUT") ||
-        lastError.message.includes("network") ||
-        lastError.message.includes("socket");
+      const isNetworkError = isTransientNetworkError(lastError);
       if (attempt < retries - 1) {
         // Use longer backoff for network errors
         const baseMs = isNetworkError ? INITIAL_BACKOFF_MS * 2 : INITIAL_BACKOFF_MS;

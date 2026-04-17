@@ -1,18 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Filler,
-  Tooltip,
-  Legend,
-} from "chart.js";
+import "@/lib/chart-registry";
 import { Line, Bar, Doughnut } from "react-chartjs-2";
 import { DataTable } from "@/components/ui/data-table";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
@@ -25,10 +14,6 @@ import { useChartOptions } from "@/lib/theme/chart-theme";
 import { ConfigurationBanner } from "@/components/layout/configuration-banner";
 import { EmptyState } from "@/components/ui/empty-state";
 
-ChartJS.register(
-  CategoryScale, LinearScale, PointElement, LineElement,
-  BarElement, ArcElement, Filler, Tooltip, Legend
-);
 
 /* ── Types ── */
 

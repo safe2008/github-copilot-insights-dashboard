@@ -1,35 +1,10 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Filler,
-  Tooltip,
-  Legend,
-  Title,
-} from "chart.js";
+import "@/lib/chart-registry";
 import { Line, Bar, Doughnut } from "react-chartjs-2";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { usePdfExport } from "@/components/ui/pdf-export";
-
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Filler,
-  Tooltip,
-  Legend,
-  Title
-);
 
 /* ── Types ── */
 

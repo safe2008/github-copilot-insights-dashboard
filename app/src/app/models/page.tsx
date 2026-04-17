@@ -1,14 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Tooltip,
-  Legend,
-} from "chart.js";
+import "@/lib/chart-registry";
 import { Bar } from "react-chartjs-2";
 import { PageHeader } from "@/components/layout/page-header";
 import { DataSourceBanner, formatDateRangeLabel } from "@/components/layout/report-filters";
@@ -18,9 +11,6 @@ import { ConfigurationBanner } from "@/components/layout/configuration-banner";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { DataRange } from "@/components/layout/report-filters";
 
-ChartJS.register(
-  CategoryScale, LinearScale, BarElement, Tooltip, Legend
-);
 
 /* ── Types ── */
 

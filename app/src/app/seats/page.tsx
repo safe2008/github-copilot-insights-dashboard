@@ -1,15 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  ArcElement,
-  Tooltip,
-  Legend,
-} from "chart.js";
+import "@/lib/chart-registry";
 import { Bar, Doughnut } from "react-chartjs-2";
 import { DataTable } from "@/components/ui/data-table";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
@@ -19,12 +11,9 @@ import { useTranslation } from "@/lib/i18n/locale-provider";
 import { ConfigurationBanner } from "@/components/layout/configuration-banner";
 import { PageHeader } from "@/components/layout/page-header";
 import { DataSourceBanner } from "@/components/layout/report-filters";
-import { AlertTriangle, Settings, Lightbulb, Sparkles, Users, BookOpen, Bot } from "lucide-react";
+import { AlertTriangle, Settings, Lightbulb, Sparkles, Users, BookOpen, Bot, ExternalLink } from "lucide-react";
 import Link from "next/link";
 
-ChartJS.register(
-  CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend
-);
 
 /* ── Types ── */
 
@@ -336,19 +325,43 @@ export default function BusinessValuePage() {
               <ul className="mt-3 space-y-2 text-sm text-blue-700 dark:text-blue-300">
                 <li className="flex items-start gap-2">
                   <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-blue-500 dark:text-blue-400" />
-                  <span>{t("seats.enablementTip1")}</span>
+                  <span>
+                    {t("seats.enablementTip1")}
+                    {" — "}
+                    <a href={t("seats.enablementTip1Link")} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium underline hover:text-blue-900 dark:hover:text-blue-100">
+                      {t("seats.enablementTip1LinkText")} <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Users className="mt-0.5 h-4 w-4 shrink-0 text-blue-500 dark:text-blue-400" />
-                  <span>{t("seats.enablementTip2")}</span>
+                  <span>
+                    {t("seats.enablementTip2")}
+                    {" — "}
+                    <a href={t("seats.enablementTip2Link")} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium underline hover:text-blue-900 dark:hover:text-blue-100">
+                      {t("seats.enablementTip2LinkText")} <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-blue-500 dark:text-blue-400" />
-                  <span>{t("seats.enablementTip3")}</span>
+                  <span>
+                    {t("seats.enablementTip3")}
+                    {" — "}
+                    <a href={t("seats.enablementTip3Link")} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium underline hover:text-blue-900 dark:hover:text-blue-100">
+                      {t("seats.enablementTip3LinkText")} <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Bot className="mt-0.5 h-4 w-4 shrink-0 text-blue-500 dark:text-blue-400" />
-                  <span>{t("seats.enablementTip4")}</span>
+                  <span>
+                    {t("seats.enablementTip4")}
+                    {" — "}
+                    <a href={t("seats.enablementTip4Link")} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium underline hover:text-blue-900 dark:hover:text-blue-100">
+                      {t("seats.enablementTip4LinkText")} <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </span>
                 </li>
               </ul>
             </div>
