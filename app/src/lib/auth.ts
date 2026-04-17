@@ -41,13 +41,15 @@ export function safeCompare(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
 
-  if (bufA.length !== bufB.length) {
-    // Still perform a compare to avoid leaking length difference via timing
-    timingSafeEqual(bufA, bufA);
-    return false;
-  }
+  // Always compare equal-length buffers to prevent timing leaks
+  const maxLen = Math.max(bufA.length, bufB.length);
+  const paddedA = Buffer.alloc(maxLen, 0);
+  const paddedB = Buffer.alloc(maxLen, 0);
+  bufA.copy(paddedA);
+  bufB.copy(paddedB);
 
-  return timingSafeEqual(bufA, bufB);
+  const equal = timingSafeEqual(paddedA, paddedB);
+  return equal && bufA.length === bufB.length;
 }
 
 /* ── Session Token (HMAC-signed, stateless) ── */
@@ -180,5 +182,15 @@ export function safeErrorMessage(err: unknown, fallback: string): string {
   if (process.env.NODE_ENV === "development") {
     return err instanceof Error ? err.message : fallback;
   }
+  return fallback;
+}
+
+/**
+ * Return the real error message, suitable for admin-gated UIs where users
+ * need diagnostic detail (e.g. Settings → Data Sync). Do NOT use for
+ * endpoints reachable by non-admin users.
+ */
+export function adminErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message;
   return fallback;
 }

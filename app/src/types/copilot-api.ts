@@ -25,6 +25,25 @@ export interface EnterpriseOrg {
   description?: string;
 }
 
+// ── Enterprise Team (from /enterprises/{enterprise}/teams) ──
+
+export interface EnterpriseTeam {
+  id: number;
+  name: string;
+  slug: string;
+  description?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface EnterpriseTeamMember {
+  login: string;
+  id: number;
+  avatar_url?: string;
+  type?: string;
+  site_admin?: boolean;
+}
+
 // ── User-Level Record (each NDJSON line in a downloaded report) ──
 
 export interface CopilotUsageRecord {

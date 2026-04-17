@@ -5,6 +5,8 @@
  * for status at runtime via API routes — no app restart needed.
  */
 
+import type { SyncScope } from "@/lib/db/settings";
+
 let timer: ReturnType<typeof setTimeout> | null = null;
 let schedulerEnabled = false;
 let intervalMinutes = 1440; // default 24h
@@ -22,10 +24,11 @@ async function runIngestion() {
   try {
     const { getGitHubConfig, getSyncScopeConfig } = await import("@/lib/db/settings");
     const { ingestCopilotUsage } = await import("@/lib/etl/ingest");
+    const { syncEnterpriseTeams } = await import("@/lib/etl/enterprise-teams");
     const { db } = await import("@/lib/db");
     const { ingestionLog } = await import("@/lib/db/schema");
     const { token, enterpriseSlug } = await getGitHubConfig();
-    const { scopes, orgLogins } = await getSyncScopeConfig();
+    const { scopes: configuredScopes, orgLogins } = await getSyncScopeConfig();
     lastRunAt = new Date();
     if (!token || !enterpriseSlug) {
       console.warn("Scheduled ingest skipped — GitHub token or slug not configured");
@@ -40,12 +43,31 @@ async function runIngestion() {
       });
       return;
     }
+
+    // Ensure org-level data is always fetched so PR metrics and Copilot Autofix
+    // data (from org aggregate endpoint) are included in every scheduled sync.
+    const hasOrgScope = configuredScopes.includes("all_orgs") || configuredScopes.includes("organization");
+    const scopes: SyncScope[] = hasOrgScope
+      ? configuredScopes
+      : [...configuredScopes, "all_orgs"];
+
     const orgLabel = scopes.includes("organization") ? `, orgs: ${orgLogins.join(", ")}` : "";
     console.info(`Scheduled ETL ingestion started (scopes: ${scopes.join("+")}${orgLabel})`);
     const result = await ingestCopilotUsage({ token, enterpriseSlug, source: "scheduled", scopes, orgLogins });
     console.info(
       `Scheduled ETL ingestion complete — fetched: ${result.recordsFetched}, inserted: ${result.recordsInserted}, skipped: ${result.recordsSkipped}`
     );
+
+    // Sync enterprise teams + memberships alongside usage data
+    try {
+      console.info("Scheduled enterprise teams sync started");
+      const teamsResult = await syncEnterpriseTeams({ enterpriseSlug, token, source: "scheduled" });
+      console.info(
+        `Scheduled enterprise teams sync complete — teams: ${teamsResult.teamsSynced}, members: ${teamsResult.totalMembers}`
+      );
+    } catch (teamsErr) {
+      console.error("Scheduled enterprise teams sync failed:", teamsErr);
+    }
   } catch (err) {
     console.error("Scheduled ETL ingestion failed:", err);
   }

@@ -1,15 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  ArcElement,
-  Tooltip,
-  Legend,
-} from "chart.js";
+import "@/lib/chart-registry";
 import { Bar, Doughnut } from "react-chartjs-2";
 import { DataTable } from "@/components/ui/data-table";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
@@ -17,12 +9,11 @@ import { usePdfExport } from "@/components/ui/pdf-export";
 import { useChartOptions } from "@/lib/theme/chart-theme";
 import { useTranslation } from "@/lib/i18n/locale-provider";
 import { ConfigurationBanner } from "@/components/layout/configuration-banner";
-import { AlertTriangle, Settings } from "lucide-react";
+import { PageHeader } from "@/components/layout/page-header";
+import { DataSourceBanner } from "@/components/layout/report-filters";
+import { AlertTriangle, Settings, Lightbulb, Sparkles, Users, BookOpen, Bot, ExternalLink } from "lucide-react";
 import Link from "next/link";
 
-ChartJS.register(
-  CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend
-);
 
 /* ── Types ── */
 
@@ -183,10 +174,10 @@ export default function BusinessValuePage() {
   const savingsBar = useMemo(() => {
     if (!data) return null;
     return {
-      labels: ["Active Seats Cost", "Potential Savings"],
+      labels: ["Active Seats Cost", "Enablement Opportunity"],
       datasets: [{
         data: [data.activeCost, data.potentialMonthlySavings],
-        backgroundColor: ["#22c55e", "#ef4444"],
+        backgroundColor: ["#22c55e", "#3b82f6"],
         borderRadius: 6,
       }],
     };
@@ -284,16 +275,12 @@ export default function BusinessValuePage() {
   return (
     <div ref={reportRef} className="space-y-6">
       <ConfigurationBanner />
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{t("seats.title")}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            {t("seats.subtitle")}
-          </p>
-        </div>
-        <PdfButton />
-      </div>
+      <PageHeader
+        title={t("seats.title")}
+        subtitle={t("seats.subtitle")}
+        actions={<PdfButton />}
+      />
+      <DataSourceBanner sourceLabel="GitHub Copilot Billing / Seats API" live />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
@@ -323,20 +310,65 @@ export default function BusinessValuePage() {
         </div>
       )}
 
-      {/* Savings Banner */}
+      {/* Enablement Banner */}
       {data.potentialMonthlySavings > 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/30">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold text-amber-900 dark:text-amber-200">Potential Savings Opportunity</h3>
-              <p className="text-sm text-amber-700 dark:text-amber-300">
-                {data.inactiveCount} users have not used Copilot in the last {data.inactiveThresholdDays} days.
-                Removing their seats could save:
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-5 dark:border-blue-800 dark:bg-blue-900/30">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <Lightbulb className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <h3 className="font-semibold text-blue-900 dark:text-blue-200">{t("seats.potentialSavingsOpportunity")}</h3>
+              </div>
+              <p className="mt-1 text-sm text-blue-700 dark:text-blue-300">
+                {t("seats.enablementBannerDescription", data.inactiveCount, data.inactiveThresholdDays)}
               </p>
+              <ul className="mt-3 space-y-2 text-sm text-blue-700 dark:text-blue-300">
+                <li className="flex items-start gap-2">
+                  <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-blue-500 dark:text-blue-400" />
+                  <span>
+                    {t("seats.enablementTip1")}
+                    {" — "}
+                    <a href={t("seats.enablementTip1Link")} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium underline hover:text-blue-900 dark:hover:text-blue-100">
+                      {t("seats.enablementTip1LinkText")} <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Users className="mt-0.5 h-4 w-4 shrink-0 text-blue-500 dark:text-blue-400" />
+                  <span>
+                    {t("seats.enablementTip2")}
+                    {" — "}
+                    <a href={t("seats.enablementTip2Link")} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium underline hover:text-blue-900 dark:hover:text-blue-100">
+                      {t("seats.enablementTip2LinkText")} <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-blue-500 dark:text-blue-400" />
+                  <span>
+                    {t("seats.enablementTip3")}
+                    {" — "}
+                    <a href={t("seats.enablementTip3Link")} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium underline hover:text-blue-900 dark:hover:text-blue-100">
+                      {t("seats.enablementTip3LinkText")} <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Bot className="mt-0.5 h-4 w-4 shrink-0 text-blue-500 dark:text-blue-400" />
+                  <span>
+                    {t("seats.enablementTip4")}
+                    {" — "}
+                    <a href={t("seats.enablementTip4Link")} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium underline hover:text-blue-900 dark:hover:text-blue-100">
+                      {t("seats.enablementTip4LinkText")} <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </span>
+                </li>
+              </ul>
             </div>
-            <div className="text-right">
-              <p className="text-2xl font-bold text-amber-900 dark:text-amber-200">{fmt$(data.potentialMonthlySavings)}/mo</p>
-              <p className="text-sm text-amber-700 dark:text-amber-300">{fmt$(data.potentialAnnualSavings)}/year</p>
+            <div className="text-right shrink-0">
+              <p className="text-xs font-medium uppercase tracking-wider text-blue-500 dark:text-blue-400">{t("seats.enablementInvestment")}</p>
+              <p className="text-2xl font-bold text-blue-900 dark:text-blue-200">{fmt$(data.potentialMonthlySavings)}/mo</p>
+              <p className="text-sm text-blue-700 dark:text-blue-300">{fmt$(data.potentialAnnualSavings)}/year</p>
             </div>
           </div>
         </div>
@@ -393,8 +425,8 @@ export default function BusinessValuePage() {
                 <td className="py-2 pr-4 text-right">{fmt$(data.activeCost)}</td>
                 <td className="py-2 text-right">{fmt$(data.activeCost * 12)}</td>
               </tr>
-              <tr className="font-medium text-amber-700 dark:text-amber-400">
-                <td className="py-2 pr-4">Potential Savings (Inactive Seats)</td>
+              <tr className="font-medium text-blue-700 dark:text-blue-400">
+                <td className="py-2 pr-4">Enablement Investment (Users to Enable)</td>
                 <td className="py-2 pr-4 text-right">{fmt$(data.potentialMonthlySavings)}</td>
                 <td className="py-2 text-right">{fmt$(data.potentialAnnualSavings)}</td>
               </tr>
@@ -403,9 +435,9 @@ export default function BusinessValuePage() {
         </div>
       </Card>
 
-      {/* Inactive Users Table */}
+      {/* Users to Enable Table */}
       {data.inactiveUsers.length > 0 && (
-        <Card title={`Inactive users (${data.inactiveUsers.length})`} subtitle={`No activity in the last ${data.inactiveThresholdDays} days`}>
+        <Card title={`Users to enable (${data.inactiveUsers.length})`} subtitle={`No activity in the last ${data.inactiveThresholdDays} days — consider onboarding support`}>
           <DataTable
             columns={[
               { key: "displayLabel", header: "User", render: (value: unknown) => <span className="font-medium text-gray-900 dark:text-gray-100">{String(value)}</span> },

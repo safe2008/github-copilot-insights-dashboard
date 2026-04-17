@@ -24,7 +24,7 @@ export async function GET() {
           source: ingestionLog.source,
         })
         .from(ingestionLog)
-        .where(eq(ingestionLog.status, "completed"))
+        .where(eq(ingestionLog.status, "success"))
         .orderBy(desc(ingestionLog.completedAt))
         .limit(1),
     ]);

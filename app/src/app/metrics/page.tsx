@@ -1,35 +1,10 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Filler,
-  Tooltip,
-  Legend,
-  Title,
-} from "chart.js";
+import "@/lib/chart-registry";
 import { Line, Bar, Doughnut } from "react-chartjs-2";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { usePdfExport } from "@/components/ui/pdf-export";
-
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Filler,
-  Tooltip,
-  Legend,
-  Title
-);
 
 /* ── Types ── */
 
@@ -68,6 +43,15 @@ const COLORS = [
   "#06b6d4", "#d946ef", "#a855f7", "#10b981", "#e11d48",
 ];
 
+/** Minimum height for horizontal bar charts; grows with the number of categories. */
+const HORIZONTAL_BAR_MIN_HEIGHT = 320;
+const HORIZONTAL_BAR_ROW_HEIGHT = 40;
+const HORIZONTAL_BAR_PADDING = 60;
+
+function horizontalBarHeight(labelCount: number) {
+  return Math.max(HORIZONTAL_BAR_MIN_HEIGHT, labelCount * HORIZONTAL_BAR_ROW_HEIGHT + HORIZONTAL_BAR_PADDING);
+}
+
 function fmtDate(d: string) {
   return new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
@@ -104,6 +88,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { useChartOptions } from "@/lib/theme/chart-theme";
 import { useTranslation } from "@/lib/i18n/locale-provider";
 import { ConfigurationBanner } from "@/components/layout/configuration-banner";
+import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 
 /* ── Component ── */
@@ -119,7 +104,8 @@ export default function CopilotUsagePage() {
 
   // Multi-select chart filters
   const [modelPerDayFilter, setModelPerDayFilter] = useState<string[]>([]);
-  const [modelPerChatModeFilter, setModelPerChatModeFilter] = useState<string[]>([]);
+  const [modelPerChatModeModelFilter, setModelPerChatModeModelFilter] = useState<string[]>([]);
+  const [modelPerChatModeModeFilter, setModelPerChatModeModeFilter] = useState<string[]>([]);
   const [modelPerLangModelFilter, setModelPerLangModelFilter] = useState<string[]>([]);
   const [modelPerLangLangFilter, setModelPerLangLangFilter] = useState<string[]>([]);
 
@@ -286,20 +272,31 @@ export default function CopilotUsagePage() {
 
   const modelPerChatModeChart = useMemo(() => {
     if (!data) return null;
-    const allKeys = extractDimKeys(data.modelUsagePerChatMode).sort();
-    const keys = modelPerChatModeFilter.length > 0 ? allKeys.filter((k) => modelPerChatModeFilter.includes(k)) : allKeys;
+    const allModeKeys = extractDimKeys(data.modelUsagePerChatMode).sort();
+    const modeKeys = modelPerChatModeModeFilter.length > 0
+      ? allModeKeys.filter((k) => modelPerChatModeModeFilter.includes(k))
+      : allModeKeys;
+    // Filter models (rows) if model filter is applied
+    const filteredData = modelPerChatModeModelFilter.length > 0
+      ? data.modelUsagePerChatMode.filter((r) => modelPerChatModeModelFilter.includes(String(r.name)))
+      : data.modelUsagePerChatMode;
     return {
-      labels: data.modelUsagePerChatMode.map((r) => String(r.name)),
-      datasets: keys.map((k, i) => ({
+      labels: filteredData.map((r) => String(r.name)),
+      datasets: modeKeys.map((k, i) => ({
         label: k,
-        data: data.modelUsagePerChatMode.map((r) => Number(r[k]) || 0),
-        backgroundColor: COLORS[allKeys.indexOf(k) % COLORS.length],
+        data: filteredData.map((r) => Number(r[k]) || 0),
+        backgroundColor: COLORS[allModeKeys.indexOf(k) % COLORS.length],
       })),
     };
-  }, [data, modelPerChatModeFilter]);
+  }, [data, modelPerChatModeModelFilter, modelPerChatModeModeFilter]);
 
-  // Available model names for the per-chat-mode filter
-  const modelPerChatModeOptions = useMemo(() => {
+  // Available options for model×chat mode filters
+  const modelPerChatModeModelOptions = useMemo(() => {
+    if (!data) return [];
+    return data.modelUsagePerChatMode.map((r) => String(r.name)).sort();
+  }, [data]);
+
+  const modelPerChatModeModeOptions = useMemo(() => {
     if (!data) return [];
     return extractDimKeys(data.modelUsagePerChatMode).sort();
   }, [data]);
@@ -383,10 +380,22 @@ export default function CopilotUsagePage() {
   const horizontalStackedOpts = (showLegend = true) => ({
     ...commonOptions,
     indexAxis: "y" as const,
+    layout: { padding: { left: 8 } },
     plugins: { ...commonOptions.plugins, legend: { ...legendPreset, display: showLegend } },
     scales: {
       x: { ...commonOptions.scales.y, stacked: true },
-      y: { ...commonOptions.scales.x, stacked: true },
+      y: {
+        ...commonOptions.scales.x,
+        stacked: true,
+        ticks: {
+          ...commonOptions.scales.x.ticks,
+          autoSkip: false,
+          crossAlign: "far" as const,
+        },
+        afterFit(axis: { width: number; maxWidth: number }) {
+          axis.width = Math.max(axis.width, 120);
+        },
+      },
     },
   });
 
@@ -405,19 +414,12 @@ export default function CopilotUsagePage() {
   return (
     <div ref={reportRef} className="space-y-6">
       <ConfigurationBanner />
-      {/* Header + Filters */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{t("dashboard.title")}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-{t("dashboard.subtitle")}{appliedFilters ? ` — ${formatDateRangeLabel(appliedFilters.startDate, appliedFilters.endDate)}` : ""}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <PdfButton />
-          <ReportFilters onApply={fetchData} onDataRange={setDataRange} />
-        </div>
-      </div>
+      <PageHeader
+        title={t("dashboard.title")}
+        subtitle={`${t("dashboard.subtitle")}${appliedFilters ? ` — ${formatDateRangeLabel(appliedFilters.startDate, appliedFilters.endDate)}` : ""}`}
+        actions={<PdfButton />}
+      />
+      <ReportFilters onApply={fetchData} onDataRange={setDataRange} />
       <DataSourceBanner />
 
       {loading && !data ? (
@@ -480,27 +482,36 @@ export default function CopilotUsagePage() {
             {modelPerDayChart && <div className="h-[350px]"><Line data={modelPerDayChart} options={stackedAreaOpts()} /></div>}
           </Card>
 
-          {/* Chat Model Usage + Model per Chat Mode */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Card title={t("dashboard.chatModelUsage")} subtitle={t("dashboard.chatModelUsageDesc")}>
-              {chatModelDonut && <div className="h-[320px]"><Doughnut data={chatModelDonut} options={doughnutOpts} /></div>}
-            </Card>
-            <Card title={t("dashboard.modelUsagePerChatMode")} subtitle={t("dashboard.modelUsagePerChatModeDesc")}
-              headerRight={
+          {/* Chat Model Usage (donut) */}
+          <Card title={t("dashboard.chatModelUsage")} subtitle={t("dashboard.chatModelUsageDesc")}>
+            {chatModelDonut && <div className="mx-auto h-[320px] max-w-md"><Doughnut data={chatModelDonut} options={doughnutOpts} /></div>}
+          </Card>
+
+          {/* Model per Chat Mode (full-width, dual filter) */}
+          <Card title={t("dashboard.modelUsagePerChatMode")} subtitle={t("dashboard.modelUsagePerChatModeDesc")}
+            headerRight={
+              <div className="flex flex-wrap gap-2">
                 <MultiSelect
-                  options={modelPerChatModeOptions}
-                  selected={modelPerChatModeFilter}
-                  onChange={setModelPerChatModeFilter}
+                  options={modelPerChatModeModelOptions}
+                  selected={modelPerChatModeModelFilter}
+                  onChange={setModelPerChatModeModelFilter}
                   placeholder={t("dashboard.allModels")}
                   label={t("dashboard.models")}
                 />
-              }
-            >
-              {modelPerChatModeChart && (
-                <div className="h-[320px]"><Bar data={modelPerChatModeChart} options={horizontalStackedOpts()} /></div>
-              )}
-            </Card>
-          </div>
+                <MultiSelect
+                  options={modelPerChatModeModeOptions}
+                  selected={modelPerChatModeModeFilter}
+                  onChange={setModelPerChatModeModeFilter}
+                  placeholder={t("dashboard.allChatModes")}
+                  label={t("dashboard.chatModes")}
+                />
+              </div>
+            }
+          >
+            {modelPerChatModeChart && (
+              <div style={{ height: horizontalBarHeight(modelPerChatModeChart.labels?.length ?? 0) }}><Bar data={modelPerChatModeChart} options={horizontalStackedOpts()} /></div>
+            )}
+          </Card>
 
           {/* Language Usage per Day */}
           <Card title={t("dashboard.languageUsagePerDay")} subtitle={t("dashboard.languageUsagePerDayDesc")}>
@@ -533,7 +544,7 @@ export default function CopilotUsagePage() {
               }
             >
               {modelPerLangChart && (
-                <div className="h-[320px]"><Bar data={modelPerLangChart} options={horizontalStackedOpts()} /></div>
+                <div style={{ height: horizontalBarHeight(modelPerLangChart.labels?.length ?? 0) }}><Bar data={modelPerLangChart} options={horizontalStackedOpts()} /></div>
               )}
             </Card>
           </div>

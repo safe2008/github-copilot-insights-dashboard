@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DataSourceBanner } from "@/components/layout/report-filters";
 
 /* ── Metric definitions ── */
 
@@ -744,11 +745,11 @@ const METRICS: MetricDef[] = [
     source: "Calculated from seat data + plan pricing",
   },
   {
-    name: "Cost vs Savings",
+    name: "Active Cost vs Enablement Opportunity",
     page: "Copilot Licensing",
     chart: "Bar Chart",
-    description: "Comparison of active seat cost vs potential savings from reallocating inactive seats.",
-    calculation: "Active Seat Cost = active_count × avg_plan_price. Potential Savings = inactive_count × avg_plan_price.",
+    description: "Comparison of active seat cost vs investment opportunity in enabling inactive users.",
+    calculation: "Active Seat Cost = active_count × avg_plan_price. Enablement Opportunity = inactive_count × avg_plan_price.",
     source: "Derived from seat utilization data",
   },
   {
@@ -870,6 +871,25 @@ const METRICS: MetricDef[] = [
     source: "fact_copilot_usage_daily + GitHub Seats API (live)",
     notes: "Supports advanced filtering by: license status, plan, activity status, mode usage (Agent/Chat/CLI), days active range, interaction range, and acceptance rate range.",
   },
+
+  // ── Enterprise Teams Page ──
+  {
+    name: "Enterprise Teams",
+    page: "Enterprise Teams",
+    chart: "Team List + Members Table",
+    description: "Lists all enterprise teams and their members. Teams are synced from the GitHub Enterprise Teams API.",
+    calculation: "Direct listing from dim_enterprise_team and dim_enterprise_team_member tables. Member counts computed via COUNT aggregate.",
+    source: "dim_enterprise_team, dim_enterprise_team_member",
+    notes: "Teams must be synced from GitHub using the Sync Teams button. Requires read:enterprise scope on the PAT.",
+  },
+  {
+    name: "Team Filter",
+    page: "All Reports",
+    chart: "Multi-select Filter",
+    description: "Filter all report data by enterprise team. When teams are selected, only users who are members of those teams are included in the report.",
+    calculation: "Resolves team members from dim_enterprise_team_member, then filters fact tables by user_id IN (team member user IDs).",
+    source: "dim_enterprise_team_member → user_id filter on fact tables",
+  },
 ];
 
 const PAGES = Array.from(new Set(METRICS.map((m) => m.page)));
@@ -905,6 +925,29 @@ const DATA_MODEL = [
       "org_name — unique organization name",
       "github_org_id — GitHub numeric org ID",
       "enterprise_id — FK to dim_enterprise",
+    ],
+  },
+  {
+    table: "dim_enterprise_team",
+    description: "Enterprise team dimension — teams defined at the enterprise level in GitHub.",
+    columns: [
+      "team_id — serial primary key",
+      "github_team_id — unique GitHub team ID",
+      "team_name — display name of the team",
+      "team_slug — URL-friendly slug",
+      "description — optional team description",
+      "enterprise_id — FK to dim_enterprise",
+    ],
+  },
+  {
+    table: "dim_enterprise_team_member",
+    description: "Mapping of users to enterprise teams. Each row represents a team membership.",
+    columns: [
+      "id — serial primary key",
+      "team_id — FK to dim_enterprise_team",
+      "user_id — GitHub numeric user ID",
+      "user_login — GitHub username",
+      "role — member role (default: member)",
     ],
   },
   {
@@ -1112,10 +1155,11 @@ export default function MetricsInfoPage() {
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">GitHub Copilot Metrics Reference</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
           Complete list of all metrics, how they are calculated, and their data sources
         </p>
       </div>
+      <DataSourceBanner sourceLabel="All synced data sources (user-level + org-level + billing)" />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
@@ -1240,6 +1284,11 @@ export default function MetricsInfoPage() {
                 { ep: "POST /api/ingest", desc: "Trigger one-off ingest from GitHub API (sync)", params: "—" },
                 { ep: "POST /api/ingest/stream", desc: "Trigger ingest with SSE progress streaming", params: "—" },
                 { ep: "POST /api/ingest/upload", desc: "Upload NDJSON/JSON metrics file with SSE streaming", params: "file (multipart)" },
+                { ep: "GET /api/enterprise-teams", desc: "List all enterprise teams with member counts", params: "—" },
+                { ep: "GET /api/enterprise-teams/{teamId}/members", desc: "List members of an enterprise team", params: "teamId (path)" },
+                { ep: "POST /api/enterprise-teams/sync", desc: "Sync enterprise teams from GitHub API", params: "—" },
+                { ep: "GET /api/health", desc: "Database health check (connectivity + latency)", params: "—" },
+                { ep: "GET /api/settings/app-info", desc: "Non-sensitive application configuration and environment info", params: "—" },
                 { ep: "POST /api/auth/verify-admin", desc: "Verify admin password for settings access", params: "JSON body" },
                 { ep: "POST /api/admin/reset", desc: "Reset database (truncate all data tables)", params: "—" },
               ].map((r) => (

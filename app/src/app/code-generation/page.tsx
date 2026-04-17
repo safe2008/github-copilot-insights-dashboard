@@ -1,22 +1,13 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Filler,
-  Tooltip,
-  Legend,
-} from "chart.js";
+import "@/lib/chart-registry";
 import { Bar } from "react-chartjs-2";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { usePdfExport } from "@/components/ui/pdf-export";
 import { useChartOptions } from "@/lib/theme/chart-theme";
 import { useTranslation } from "@/lib/i18n/locale-provider";
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Filler, Tooltip, Legend);
 
 /* ── Types ── */
 
@@ -38,6 +29,7 @@ interface CodeGenData {
 
 import { ReportFilters, DataSourceBanner, formatDateRangeLabel, type FilterState, type DataRange } from "@/components/layout/report-filters";
 import { ConfigurationBanner } from "@/components/layout/configuration-banner";
+import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 
 /* ── Helpers ── */
@@ -277,19 +269,12 @@ export default function CodeGenerationPage() {
   return (
     <div ref={reportRef} className="space-y-6">
       <ConfigurationBanner />
-      {/* ── Header + Filters ── */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{t("codeGen.title")}</h1>
-          <p className="text-sm text-gray-500">
-            {t("codeGen.subtitle")}{appliedFilters ? ` — ${formatDateRangeLabel(appliedFilters.startDate, appliedFilters.endDate)}` : ""}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <PdfButton />
-          <ReportFilters onApply={fetchData} onDataRange={setDataRange} />
-        </div>
-      </div>
+      <PageHeader
+        title={t("codeGen.title")}
+        subtitle={`${t("codeGen.subtitle")}${appliedFilters ? ` — ${formatDateRangeLabel(appliedFilters.startDate, appliedFilters.endDate)}` : ""}`}
+        actions={<PdfButton />}
+      />
+      <ReportFilters onApply={fetchData} onDataRange={setDataRange} />
       <DataSourceBanner />
 
       {loading && !data ? (

@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Settings, Database, ScrollText, LogOut } from "lucide-react";
+import { Settings, Database, ScrollText, LogOut, Info } from "lucide-react";
 import { AdminGate } from "@/components/auth/admin-gate";
 
 const tabs = [
   { label: "Configuration", href: "/settings", icon: Settings },
   { label: "Data Sync", href: "/settings/data-sync", icon: Database },
   { label: "Audit Log", href: "/settings/audit-log", icon: ScrollText },
+  { label: "App Info", href: "/settings/app-info", icon: Info },
 ];
 
 export default function SettingsLayout({

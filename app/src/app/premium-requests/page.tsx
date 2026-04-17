@@ -1,29 +1,19 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  ArcElement,
-  Tooltip,
-  Legend,
-} from "chart.js";
+import "@/lib/chart-registry";
 import { Bar, Doughnut } from "react-chartjs-2";
 import { useChartOptions } from "@/lib/theme/chart-theme";
 import { useTranslation } from "@/lib/i18n/locale-provider";
-import { Breadcrumb } from "@/components/layout/breadcrumb";
+import { PageHeader } from "@/components/layout/page-header";
 import { DataTable } from "@/components/ui/data-table";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { usePdfExport } from "@/components/ui/pdf-export";
 import { ConfigurationBanner } from "@/components/layout/configuration-banner";
+import { DataSourceBanner } from "@/components/layout/report-filters";
 import { AlertTriangle, Settings } from "lucide-react";
 import Link from "next/link";
 
-ChartJS.register(
-  CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend
-);
 
 /* ── Types ── */
 
@@ -221,17 +211,12 @@ export default function PremiumRequestsPage() {
   return (
     <div ref={reportRef} className="space-y-6">
       <ConfigurationBanner />
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <Breadcrumb items={[{ label: "Premium Requests", href: "/premium-requests" }]} />
-          <h1 className="mt-1 text-xl font-bold text-gray-900 dark:text-gray-100">{t("premiumRequests.title")}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            {t("premiumRequests.subtitle")}
-          </p>
-        </div>
-        <PdfButton />
-      </div>
+      <PageHeader
+        title={t("premiumRequests.title")}
+        subtitle={t("premiumRequests.subtitle")}
+        actions={<PdfButton />}
+      />
+      <DataSourceBanner sourceLabel="GitHub Premium Request Billing API" live />
 
       {/* Month Selector */}
       <div className="flex items-center gap-3">

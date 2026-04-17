@@ -21,6 +21,7 @@ import {
   Timer,
   Info,
   Building2,
+  UsersRound,
   X,
 } from "lucide-react";
 
@@ -92,6 +93,9 @@ const SOURCE_LABELS: Record<string, { label: string; color: string; icon: typeof
   file_upload: { label: "File Upload", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300", icon: FileDown },
 };
 
+/** Pixel threshold – auto-scroll only when within this distance of the bottom. */
+const AUTO_SCROLL_THRESHOLD = 64;
+
 const SCOPE_LABELS: Record<string, { label: string; color: string }> = {
   enterprise: { label: "Enterprise", color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300" },
   all_orgs: { label: "All Orgs", color: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300" },
@@ -131,8 +135,9 @@ export default function DataSyncPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
-  const logEndRef = useRef<HTMLDivElement>(null);
+  const logContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Sync interval state
   const [isCustomInterval, setIsCustomInterval] = useState(false);
@@ -172,13 +177,24 @@ export default function DataSyncPage() {
   const [historyPage, setHistoryPage] = useState(0);
   const HISTORY_PAGE_SIZE = 10;
 
+  // Enterprise teams sync state
+  const [teamsStats, setTeamsStats] = useState<{
+    teamCount: number;
+    memberCount: number;
+    lastSyncedAt: string | null;
+  } | null>(null);
+  const [teamsSyncing, setTeamsSyncing] = useState(false);
+  const [teamsSyncLogs, setTeamsSyncLogs] = useState<string[]>([]);
+  const teamsLogContainerRef = useRef<HTMLDivElement>(null);
+
   const fetchData = useCallback(async () => {
     try {
-      const [settingsRes, historyRes, intervalRes, scheduleRes] = await Promise.all([
+      const [settingsRes, historyRes, intervalRes, scheduleRes, teamsStatsRes] = await Promise.all([
         fetch("/api/settings"),
         fetch("/api/settings/sync-history"),
         fetch("/api/settings/sync-interval"),
         fetch("/api/settings/sync-schedule"),
+        fetch("/api/enterprise-teams/stats"),
       ]);
       if (settingsRes.ok) {
         const settingsData: SettingsData = await settingsRes.json();
@@ -214,6 +230,14 @@ export default function DataSyncPage() {
         const data: SchedulerStatus = await scheduleRes.json();
         setSchedulerStatus(data);
       }
+      if (teamsStatsRes.ok) {
+        const data = await teamsStatsRes.json();
+        setTeamsStats({
+          teamCount: Number(data.teamCount ?? 0),
+          memberCount: Number(data.memberCount ?? 0),
+          lastSyncedAt: data.lastSyncedAt ?? null,
+        });
+      }
     } catch (err) {
       console.error("Failed to fetch data sync info:", err);
     } finally {
@@ -226,8 +250,18 @@ export default function DataSyncPage() {
   }, [fetchData]);
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = logContainerRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < AUTO_SCROLL_THRESHOLD;
+    if (isNearBottom) el.scrollTop = el.scrollHeight;
   }, [ingestLogs]);
+
+  useEffect(() => {
+    const el = teamsLogContainerRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < AUTO_SCROLL_THRESHOLD;
+    if (isNearBottom) el.scrollTop = el.scrollHeight;
+  }, [teamsSyncLogs]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -554,8 +588,11 @@ export default function DataSyncPage() {
     setApiSyncing(true);
     setIngestLogs([]);
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
-      const res = await fetch("/api/ingest/stream", { method: "POST" });
+      const res = await fetch("/api/ingest/stream", { method: "POST", signal: controller.signal });
       if (!res.ok) {
         const err = await res.json();
         showMessage("error", err.error ?? "Ingestion failed");
@@ -563,12 +600,27 @@ export default function DataSyncPage() {
         return;
       }
       await readSSEStream(res);
-    } catch {
-      showMessage("error", "Network error during ingestion");
-      setIngestLogs((prev) => [...prev, "✗ Network error"]);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        // User clicked Cancel — messaging already handled by handleCancel
+        setIngestLogs((prev) => [...prev, "⏹ Fetch aborted"]);
+      } else {
+        showMessage("error", "Network error during ingestion");
+        setIngestLogs((prev) => [...prev, "✗ Network error"]);
+      }
     } finally {
+      abortControllerRef.current = null;
       setApiSyncing(false);
       fetchData(); // refresh history
+    }
+  };
+
+  const handleCancel = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIngestLogs((prev) => [...prev, "⚠ Import cancelled by user"]);
+      showMessage("error", "Import cancelled");
     }
   };
 
@@ -607,6 +659,71 @@ export default function DataSyncPage() {
     } finally {
       setFileUploading(false);
       fetchData(); // refresh history
+    }
+  };
+
+  const handleSyncTeams = async () => {
+    setTeamsSyncing(true);
+    setTeamsSyncLogs([]);
+
+    try {
+      const res = await fetch("/api/enterprise-teams/sync/stream", { method: "POST" });
+      if (!res.ok) {
+        const contentType = res.headers.get("content-type") ?? "";
+        const errMsg = contentType.includes("application/json")
+          ? (await res.json()).error ?? "Teams sync failed"
+          : "Teams sync failed";
+        showMessage("error", errMsg);
+        setTeamsSyncLogs((prev) => [...prev, `✗ ${errMsg}`]);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        showMessage("error", "Unable to read stream");
+        return;
+      }
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const match = line.match(/^data: (.+)$/);
+          if (!match) continue;
+          try {
+            const event = JSON.parse(match[1]);
+            if (event.type === "log") {
+              setTeamsSyncLogs((prev) => [...prev, event.message]);
+            } else if (event.type === "done") {
+              const result = JSON.parse(event.message);
+              setTeamsSyncLogs((prev) => [
+                ...prev,
+                `✓ Complete — ${result.teamsSynced} team(s), ${result.totalMembers} member(s), ${result.apiRequests} API request(s)`,
+              ]);
+              showMessage(
+                "success",
+                `Teams sync complete — ${result.teamsSynced} team(s), ${result.totalMembers} member(s).`,
+              );
+            } else if (event.type === "error") {
+              setTeamsSyncLogs((prev) => [...prev, `✗ ERROR: ${event.message}`]);
+              showMessage("error", event.message);
+            }
+          } catch {
+            /* skip malformed events */
+          }
+        }
+      }
+    } catch {
+      showMessage("error", "Network error during teams sync");
+      setTeamsSyncLogs((prev) => [...prev, "✗ Network error"]);
+    } finally {
+      setTeamsSyncing(false);
+      fetchData(); // refresh stats + history
     }
   };
 
@@ -661,7 +778,7 @@ export default function DataSyncPage() {
           <p className="text-sm font-medium text-blue-900 dark:text-blue-200">How data sync works</p>
           <p className="mt-1 text-xs leading-relaxed text-blue-700 dark:text-blue-400">
             The GitHub Copilot Metrics API refreshes data approximately once every 24 hours (end of UTC day).
-            You can schedule automatic syncs, trigger a one-time pull, or upload an NDJSON metrics export.
+            You can schedule automatic syncs (including PR metrics, Copilot Autofix, and enterprise teams), trigger a one-time pull, or upload an NDJSON metrics export.
             Duplicate records are automatically detected and skipped.
           </p>
         </div>
@@ -909,14 +1026,26 @@ export default function DataSyncPage() {
               <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
                 One-time pull of the latest metrics from the GitHub API.
               </p>
-              <button
-                onClick={() => setShowConfirm(true)}
-                disabled={isBusy || !isConfigured || !hasSlug}
-                className="inline-flex items-center gap-2 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-xs hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {apiSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                {apiSyncing ? "Syncing…" : "Pull from API"}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowConfirm(true)}
+                  disabled={isBusy || !isConfigured || !hasSlug}
+                  className="inline-flex items-center gap-2 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-xs hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {apiSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                  {apiSyncing ? "Syncing…" : "Pull from API"}
+                </button>
+                {apiSyncing && (
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    className="flex items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 dark:border-red-600 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                  >
+                    <Square className="h-3.5 w-3.5" />
+                    Cancel Import
+                  </button>
+                )}
+              </div>
               {!isConfigured && (
                 <p className="mt-2 text-xs text-amber-600">
                   Configure a GitHub token in the Configuration tab first.
@@ -956,7 +1085,7 @@ export default function DataSyncPage() {
                 </button>
               </div>
               <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-                Automatically pull fresh data at a recurring interval.
+                Automatically pull fresh usage metrics, pull request &amp; Copilot Autofix data, and enterprise teams at a recurring interval.
               </p>
               <div className="flex items-start gap-2">
                 <div ref={dropdownRef} className="relative flex-1">
@@ -1044,6 +1173,87 @@ export default function DataSyncPage() {
         </div>
       </div>
 
+      {/* Enterprise Teams Sync */}
+      <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 p-5">
+        <div className="mb-1 flex items-center gap-2">
+          <UsersRound className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Enterprise Teams</h2>
+        </div>
+        <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
+          Sync the list of enterprise teams and their members from the GitHub
+          Enterprise Teams API. Team data powers the team filter on every dashboard report.
+          Teams are also synced automatically as part of scheduled sync.
+        </p>
+
+        {/* Stats row */}
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-900/40">
+            <div className="text-xs text-gray-500 dark:text-gray-400">Teams</div>
+            <div className="text-lg font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
+              {teamsStats?.teamCount ?? "—"}
+            </div>
+          </div>
+          <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-900/40">
+            <div className="text-xs text-gray-500 dark:text-gray-400">Members</div>
+            <div className="text-lg font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
+              {teamsStats?.memberCount ?? "—"}
+            </div>
+          </div>
+          <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-900/40">
+            <div className="text-xs text-gray-500 dark:text-gray-400">Last synced</div>
+            <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+              {teamsStats?.lastSyncedAt
+                ? new Date(teamsStats.lastSyncedAt).toLocaleString()
+                : "Never"}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSyncTeams}
+            disabled={teamsSyncing || isBusy || !isConfigured || !hasSlug}
+            className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-xs hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {teamsSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            {teamsSyncing ? "Syncing teams…" : "Sync Teams Now"}
+          </button>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            Requires <code className="rounded-sm bg-gray-100 px-1 dark:bg-gray-700">read:enterprise</code> PAT scope.
+          </span>
+        </div>
+        {!isConfigured && (
+          <p className="mt-2 text-xs text-amber-600">
+            Configure a GitHub token in the Configuration tab first.
+          </p>
+        )}
+        {isConfigured && !hasSlug && (
+          <p className="mt-2 text-xs text-amber-600">
+            Configure an enterprise slug in the Configuration tab first.
+          </p>
+        )}
+
+        {/* Live log viewer */}
+        {(teamsSyncing || teamsSyncLogs.length > 0) && (
+          <div className="mt-4 rounded-md border border-gray-200 bg-gray-900 text-gray-100 dark:border-gray-700">
+            <div className="flex items-center justify-between border-b border-gray-700 px-3 py-1.5 text-xs text-gray-400">
+              <span className="flex items-center gap-1.5">
+                <Terminal className="h-3.5 w-3.5" />
+                Sync progress
+              </span>
+              {teamsSyncing && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400" />}
+            </div>
+            <div ref={teamsLogContainerRef} className="max-h-48 overflow-y-auto px-3 py-2 font-mono text-xs">
+              {teamsSyncLogs.map((line, i) => (
+                <div key={i} className="whitespace-pre-wrap break-all">
+                  {line}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* File Upload */}
       <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 p-5">
         <div className="mb-1 flex items-center gap-2">
@@ -1120,7 +1330,7 @@ export default function DataSyncPage() {
             <span className="text-xs font-medium text-gray-400 dark:text-gray-500">Ingestion Log</span>
             {isBusy && <Loader2 className="ml-auto h-3 w-3 animate-spin text-green-400" />}
           </div>
-          <div className="max-h-64 overflow-y-auto p-3 font-mono text-xs leading-5">
+          <div ref={logContainerRef} className="max-h-64 overflow-y-auto p-3 font-mono text-xs leading-5">
             {ingestLogs.map((line, i) => (
               <div
                 key={i}
@@ -1135,7 +1345,6 @@ export default function DataSyncPage() {
                 {line}
               </div>
             ))}
-            <div ref={logEndRef} />
           </div>
         </div>
       )}

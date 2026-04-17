@@ -8,6 +8,7 @@ import { useTranslation } from "@/lib/i18n/locale-provider";
 export interface FilterOptions {
   users: Array<{ id: number; login: string; displayLabel: string }>;
   orgs: Array<{ id: number; name: string }>;
+  enterpriseTeams: Array<{ id: number; name: string; slug: string; memberCount: number }>;
 }
 
 export interface DataRange {
@@ -24,6 +25,8 @@ export interface FilterState {
   userId: string;
   /** Comma-separated org IDs for multi-select, or empty string for "all". */
   orgId: string;
+  /** Comma-separated enterprise team IDs for multi-select, or empty string for "all". */
+  teamId: string;
 }
 
 interface ReportFiltersProps {
@@ -81,8 +84,9 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
   const [startDate, setStartDate] = useState(daysAgoStr(defaultDays));
   const [endDate, setEndDate] = useState(todayStr());
   const [userId, setUserId] = useState("");
-  const [selectedOrgIds, setSelectedOrgIds] = useState<string[]>([]);
-  const [filterOptions, setFilterOptions] = useState<FilterOptions>({ users: [], orgs: [] });
+  const [selectedOrgIds, setSelectedOrgIds] = useState<string[]>(["enterprise"]);
+  const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({ users: [], orgs: [], enterpriseTeams: [] });
   const [dataRange, setDataRange] = useState<DataRange | null>(null);
 
   // Searchable user dropdown state
@@ -94,6 +98,11 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
   const [showOrgDropdown, setShowOrgDropdown] = useState(false);
   const [orgSearchText, setOrgSearchText] = useState("");
   const orgDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Team multi-select dropdown state
+  const [showTeamDropdown, setShowTeamDropdown] = useState(false);
+  const [teamSearchText, setTeamSearchText] = useState("");
+  const teamDropdownRef = useRef<HTMLDivElement>(null);
 
   // Fetch filter options and data range in parallel, then set date defaults from data range
   const didInit = useRef(false);
@@ -113,18 +122,18 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
           setEndDate(end);
           if (!didInit.current) {
             didInit.current = true;
-            onApply({ startDate: start, endDate: end, userId: "", orgId: "" });
+            onApply({ startDate: start, endDate: end, userId: "", orgId: "enterprise", teamId: "" });
           }
         } else if (!didInit.current) {
           didInit.current = true;
-          onApply({ startDate, endDate, userId, orgId: selectedOrgIds.join(",") });
+          onApply({ startDate, endDate, userId, orgId: selectedOrgIds.join(","), teamId: selectedTeamIds.join(",") });
         }
       })
       .catch((err) => {
         console.error("Failed to load filter options:", err);
         if (!didInit.current) {
           didInit.current = true;
-          onApply({ startDate, endDate, userId, orgId: selectedOrgIds.join(",") });
+          onApply({ startDate, endDate, userId, orgId: selectedOrgIds.join(","), teamId: selectedTeamIds.join(",") });
         }
       });
   }, []);// eslint-disable-line react-hooks/exhaustive-deps
@@ -138,6 +147,9 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
       if (orgDropdownRef.current && !orgDropdownRef.current.contains(e.target as Node)) {
         setShowOrgDropdown(false);
       }
+      if (teamDropdownRef.current && !teamDropdownRef.current.contains(e.target as Node)) {
+        setShowTeamDropdown(false);
+      }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -147,7 +159,8 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
     const orgId = selectedOrgIds.includes("enterprise")
       ? "enterprise"
       : selectedOrgIds.join(",");
-    onApply({ startDate, endDate, userId, orgId });
+    const teamId = selectedTeamIds.join(",");
+    onApply({ startDate, endDate, userId, orgId, teamId });
   };
 
   const filteredUsers = filterOptions.users.filter((u) => {
@@ -159,7 +172,7 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
   const selectedUser = filterOptions.users.find((u) => String(u.id) === userId);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       <div className="flex items-center gap-1.5">
         <label className="text-xs text-gray-500 dark:text-gray-400">{t("common.from")}</label>
         <input
@@ -193,7 +206,7 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
             {selectedUser ? selectedUser.displayLabel : t("common.allUsers")}
           </button>
           {showDropdown && (
-            <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">
+            <div className="absolute right-0 top-full z-50 mt-1 w-64 rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">
               <div className="border-b border-gray-100 p-2 dark:border-gray-700">
                 <input
                   type="text"
@@ -250,7 +263,7 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
                   : `${selectedOrgIds.length} organizations`}
           </button>
           {showOrgDropdown && (
-            <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">
+            <div className="absolute right-0 top-full z-50 mt-1 w-64 rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">
               <div className="border-b border-gray-100 p-2 dark:border-gray-700">
                 <input
                   type="text"
@@ -315,6 +328,77 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
           )}
         </div>
       )}
+      {/* Enterprise Team filter — multi-select, only show when teams exist */}
+      {filterOptions.enterpriseTeams.length > 0 && (
+        <div ref={teamDropdownRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setShowTeamDropdown(!showTeamDropdown)}
+            className="w-48 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-left text-sm text-gray-700 shadow-xs focus:border-blue-500 focus:outline-hidden truncate dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+          >
+            {selectedTeamIds.length === 0
+              ? t("common.allTeams")
+              : selectedTeamIds.length === 1
+                ? filterOptions.enterpriseTeams.find((t) => String(t.id) === selectedTeamIds[0])?.name ?? "1 team"
+                : `${selectedTeamIds.length} ${t("common.teams")}`}
+          </button>
+          {showTeamDropdown && (
+            <div className="absolute right-0 top-full z-50 mt-1 w-64 rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">
+              <div className="border-b border-gray-100 p-2 dark:border-gray-700">
+                <input
+                  type="text"
+                  placeholder={t("common.searchTeams")}
+                  value={teamSearchText}
+                  onChange={(e) => setTeamSearchText(e.target.value)}
+                  className="w-full rounded-sm border border-gray-200 px-2.5 py-1.5 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-hidden dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+                  autoFocus
+                />
+              </div>
+              <ul className="max-h-60 overflow-y-auto py-1">
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedTeamIds([]); }}
+                    className={`w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedTeamIds.length === 0 ? "bg-blue-50 text-blue-700 font-medium dark:bg-blue-900/30 dark:text-blue-400" : "text-gray-700 dark:text-gray-300"}`}
+                  >
+                    {t("common.allTeams")}
+                  </button>
+                </li>
+                <li>
+                  <div className="mx-3 my-1 border-t border-gray-100 dark:border-gray-700" />
+                </li>
+                {filterOptions.enterpriseTeams
+                  .filter((team) => !teamSearchText || team.name.toLowerCase().includes(teamSearchText.toLowerCase()))
+                  .map((team) => {
+                    const isSelected = selectedTeamIds.includes(String(team.id));
+                    return (
+                      <li key={team.id}>
+                        <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {
+                              setSelectedTeamIds((prev) =>
+                                isSelected
+                                  ? prev.filter((id) => id !== String(team.id))
+                                  : [...prev, String(team.id)]
+                              );
+                            }}
+                            className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className={isSelected ? "font-medium text-blue-700 dark:text-blue-400" : "text-gray-700 dark:text-gray-300"}>
+                            {team.name}
+                            <span className="ml-1 text-xs text-gray-400 dark:text-gray-500">({team.memberCount})</span>
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
       <button
         onClick={handleApply}
         className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-xs hover:bg-blue-700"
@@ -327,29 +411,39 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
 
 /* ── DataSourceBanner ── */
 
-export function DataSourceBanner({ sourceLabel }: { sourceLabel?: string } = {}) {
+/**
+ * Shows the data source label and optionally the synced data range / last-sync timestamp.
+ *
+ * Pass `live` to indicate the page fetches data directly from a live API — when true the
+ * banner only renders the source label without range or last-sync info.
+ */
+export function DataSourceBanner({ sourceLabel, live }: { sourceLabel?: string; live?: boolean } = {}) {
   const { t } = useTranslation();
   const [range, setRange] = useState<DataRange | null>(null);
 
   useEffect(() => {
+    if (live) return;              // live pages don't need the sync range
     fetch("/api/data-range")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) setRange(d); })
       .catch((err) => console.error("Failed to load data range:", err));
-  }, []);
+  }, [live]);
 
-  if (!range || !range.dataStart) return null;
+  // For synced pages, wait until range is available
+  if (!live && (!range || !range.dataStart)) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
       <span>
         <span className="font-medium text-gray-600 dark:text-gray-300">{t("dataSource.label")}</span> {sourceLabel ?? t("dataSource.defaultSource")}
       </span>
-      <span>
-        <span className="font-medium text-gray-600 dark:text-gray-300">{t("dataSource.range")}</span>{" "}
-        {fmtDateShort(range.dataStart)} – {fmtDateShort(range.dataEnd!)}
-      </span>
-      {range.lastSyncAt && (
+      {!live && range && range.dataStart && (
+        <span>
+          <span className="font-medium text-gray-600 dark:text-gray-300">{t("dataSource.range")}</span>{" "}
+          {fmtDateShort(range.dataStart)} – {fmtDateShort(range.dataEnd!)}
+        </span>
+      )}
+      {!live && range?.lastSyncAt && (
         <span>
           <span className="font-medium text-gray-600 dark:text-gray-300">{t("dataSource.lastSync")}</span>{" "}
           {fmtDateTime(range.lastSyncAt)} ({range.lastSyncSource})
