@@ -87,6 +87,12 @@ Individual user activity explorer with license status, engagement metrics, and f
 
 ![Users](docs/screenshots/users.png)
 
+### Enterprise Teams
+
+Enterprise team management with member sync from GitHub Enterprise Teams API.
+
+![Enterprise Teams](docs/screenshots/enterprise-teams.png)
+
 ### Metrics Reference
 
 200+ metric definitions with calculation formulas, data sources, and usage guidance.
