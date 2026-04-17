@@ -1,6 +1,6 @@
 # Architecture
 
-Copilot Insights is an enterprise analytics dashboard for GitHub Copilot usage data. This document describes the system architecture, data flow, and key components.
+Copilot Insights is an enterprise analytics dashboard for GitHub Copilot usage data. It helps engineering leaders measure adoption, optimize licensing costs, and track AI model activity across their organization. This document describes the system architecture, data flow, and key components.
 
 ## System Overview
 
@@ -17,9 +17,10 @@ graph TD
     React -- "fetch()" --> API
     API -- "Drizzle ORM" --> PG
     ETL -- "GitHub API v2026-03-10" --> GH
+    API -- "Live proxy" --> GH
 
     PG[("PostgreSQL 18<br/>Star Schema<br/>Azure Flexible Server")]
-    GH["GitHub REST API<br/>api.github.com<br/>• Usage Metrics<br/>• Billing / Seats<br/>• Premium Requests"]
+    GH["GitHub REST API<br/>api.github.com<br/>• Usage Metrics<br/>• Billing / Seats<br/>• Premium Requests<br/>• Enterprise Teams"]
 ```
 
 ## Component Architecture
@@ -31,16 +32,19 @@ All dashboard pages are client components using `"use client"` that fetch data f
 | Component | Purpose |
 |---|---|
 | `components/layout/sidebar.tsx` | Main navigation sidebar with theme/locale switchers |
-| `components/layout/report-filters.tsx` | Shared date range picker + searchable user filter |
+| `components/layout/report-filters.tsx` | Shared date range picker + org/team/user multi-select filters |
 | `components/layout/breadcrumb.tsx` | Page breadcrumb navigation |
 | `components/layout/configuration-banner.tsx` | Banner shown when GitHub token or enterprise slug is missing |
-| `components/ui/data-table.tsx` | Sortable, paginated data table |
+| `components/ui/data-table.tsx` | Sortable, paginated data table with search, filter, and CSV/Excel export |
+| `components/ui/multi-select.tsx` | Searchable multi-select dropdown for chart filters |
 | `components/ui/pdf-export.tsx` | One-click PDF generation for all dashboards |
 | `components/ui/loading-spinner.tsx` | Loading state with message |
 | `components/ui/empty-state.tsx` | Empty state when no data is available |
 | `components/auth/admin-gate.tsx` | Admin password gate for settings pages |
-| `lib/i18n/locale-provider.tsx` | Internationalization provider (en/ar/es/fr) |
+| `components/auth/auth-gate.tsx` | Dashboard password gate for all pages |
+| `lib/i18n/locale-provider.tsx` | Internationalization provider (en/ar/es/fr) with RTL support |
 | `lib/theme/theme-provider.tsx` | Dark/light/system theme provider |
+| `lib/theme/chart-theme.tsx` | Theme-aware Chart.js options hook |
 
 ### API Layer (Next.js Route Handlers)
 
@@ -55,22 +59,28 @@ All API routes live under `app/src/app/api/` and use Zod for request validation.
 | `/api/metrics/cli` | GET | CLI sessions, requests, token consumption |
 | `/api/metrics/models` | GET | Model catalog with usage stats |
 | `/api/metrics/seats` | GET | Live seat data from GitHub Billing API |
-| `/api/metrics/premium-requests` | GET | Live premium request data from GitHub API |
-| `/api/users` | GET | User-level activity data |
-| `/api/filters` | GET | Available filter options (user list) |
+| `/api/metrics/premium-requests` | GET | Live premium request data from GitHub Billing API |
+| `/api/users` | GET | User-level activity data merged with GitHub license API |
+| `/api/filters` | GET | Available filter options (orgs, teams, users) |
 | `/api/data-range` | GET | Ingested data date range for banners |
+| `/api/enterprise-teams` | GET | List enterprise teams |
+| `/api/enterprise-teams/[teamId]/members` | GET | Team member listing |
+| `/api/enterprise-teams/sync` | POST | Manual enterprise teams sync |
+| `/api/enterprise-teams/sync/stream` | GET | SSE enterprise teams sync progress |
 | `/api/ingest` | POST | Trigger data ingest |
 | `/api/ingest/stream` | GET | SSE streaming ingest with progress |
-| `/api/ingest/upload` | POST | Upload JSON data manually |
-| `/api/settings` | GET/POST | Application settings CRUD |
+| `/api/ingest/upload` | POST | Upload JSON/NDJSON data manually |
+| `/api/settings` | GET/PUT/DELETE | Application settings CRUD |
 | `/api/settings/orgs` | GET | Discover GitHub organizations |
 | `/api/settings/sync-history` | GET | Sync history log |
 | `/api/settings/sync-interval` | GET/POST | Background sync interval config |
 | `/api/settings/sync-schedule` | GET/POST | Cron-based sync schedule |
+| `/api/settings/app-info` | GET | Application info and database status |
 | `/api/auth/verify-admin` | POST | Admin password verification |
-| `/api/auth/verify-dashboard` | POST | Dashboard access verification |
+| `/api/auth/verify-dashboard` | GET/POST | Dashboard access verification |
 | `/api/admin/reset` | POST | Database reset |
 | `/api/audit-log` | GET | Audit log entries |
+| `/api/health` | GET | Health check endpoint |
 
 ### ETL Pipeline
 
@@ -107,8 +117,10 @@ The database follows a **star schema** design optimized for analytics queries.
 | `dim_user` | SCD Type 2 user dimension (login, display name, team, org) |
 | `dim_ide` | IDE/editor dimension (VS Code, JetBrains, etc.) |
 | `dim_feature` | Copilot feature/mode dimension (chat, agent, code_completion, etc.) |
-| `dim_model` | AI model dimension (GPT-4, Claude, Gemini, + display name, premium flag) |
+| `dim_model` | AI model dimension (GPT-5.4, Claude, Gemini, + display name, premium flag) |
 | `dim_language` | Programming language dimension |
+| `dim_enterprise_team` | Enterprise team dimension (slug, description, sync timestamp) |
+| `dim_enterprise_team_member` | Enterprise team member mapping (user login, role) |
 
 ### Fact Tables
 
@@ -253,7 +265,7 @@ graph LR
     E --> F["React pages<br/>fetch() + Chart.js"]
 ```
 
-### Live Data (Seats, Premium Requests)
+### Live Data (Seats, Premium Requests, Enterprise Teams)
 
 ```mermaid
 graph LR
@@ -261,20 +273,21 @@ graph LR
     C --> D["Response formatted<br/>and returned to client"]
 ```
 
-Seats and Premium Requests pages call GitHub APIs directly on each request (no database caching) to ensure real-time data. These pages display a "Live from GitHub API" data source banner.
+Seats, Premium Requests, and Enterprise Teams pages call GitHub APIs directly on each request (no database caching) to ensure real-time data. These pages display a "Live from GitHub API" data source banner.
 
 ## Configuration
 
-Application settings are stored in the `settings` database table and managed through the Settings UI:
+Application settings are stored in the `app_settings` database table and managed through the Settings UI:
 
 | Setting | Description |
 |---|---|
-| GitHub Token | PAT for API access |
-| GitHub Organization | Org slug for API queries |
-| Admin Password | Password for settings access |
-| Sync Interval | Auto-sync frequency in minutes |
+| GitHub Token | PAT for API access (`manage_billing:copilot`, `read:enterprise`, `read:org`) |
+| Enterprise Slug | Enterprise identifier for API queries |
+| Sync Scope | Enterprise-wide or org-specific data ingestion |
+| Sync Org Logins | Comma-separated org logins (when scope is org-specific) |
 
-The Settings page has three tabs:
-1. **Configuration** — Token, enterprise slug, password management
-2. **Data Sync** — Manual sync trigger, sync history, schedule config
-3. **Audit Log** — Admin action history
+The Settings page has four tabs:
+1. **Configuration** — Token, enterprise slug, API reference table
+2. **Data Sync** — Manual sync trigger, file upload, sync history, schedule config, database management
+3. **Audit Log** — Admin action history with search, filter, and export
+4. **App Info** — Database status, API version, build info, and required scopes
