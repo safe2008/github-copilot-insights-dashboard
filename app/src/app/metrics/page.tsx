@@ -68,6 +68,15 @@ const COLORS = [
   "#06b6d4", "#d946ef", "#a855f7", "#10b981", "#e11d48",
 ];
 
+/** Minimum height for horizontal bar charts; grows with the number of categories. */
+const HORIZONTAL_BAR_MIN_HEIGHT = 320;
+const HORIZONTAL_BAR_ROW_HEIGHT = 40;
+const HORIZONTAL_BAR_PADDING = 60;
+
+function horizontalBarHeight(labelCount: number) {
+  return Math.max(HORIZONTAL_BAR_MIN_HEIGHT, labelCount * HORIZONTAL_BAR_ROW_HEIGHT + HORIZONTAL_BAR_PADDING);
+}
+
 function fmtDate(d: string) {
   return new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
@@ -384,10 +393,22 @@ export default function CopilotUsagePage() {
   const horizontalStackedOpts = (showLegend = true) => ({
     ...commonOptions,
     indexAxis: "y" as const,
+    layout: { padding: { left: 8 } },
     plugins: { ...commonOptions.plugins, legend: { ...legendPreset, display: showLegend } },
     scales: {
       x: { ...commonOptions.scales.y, stacked: true },
-      y: { ...commonOptions.scales.x, stacked: true },
+      y: {
+        ...commonOptions.scales.x,
+        stacked: true,
+        ticks: {
+          ...commonOptions.scales.x.ticks,
+          autoSkip: false,
+          crossAlign: "far" as const,
+        },
+        afterFit(axis: { width: number; maxWidth: number }) {
+          axis.width = Math.max(axis.width, 120);
+        },
+      },
     },
   });
 
@@ -491,7 +512,7 @@ export default function CopilotUsagePage() {
               }
             >
               {modelPerChatModeChart && (
-                <div className="h-[320px]"><Bar data={modelPerChatModeChart} options={horizontalStackedOpts()} /></div>
+                <div style={{ height: horizontalBarHeight(modelPerChatModeChart.labels?.length ?? 0) }}><Bar data={modelPerChatModeChart} options={horizontalStackedOpts()} /></div>
               )}
             </Card>
           </div>
@@ -527,7 +548,7 @@ export default function CopilotUsagePage() {
               }
             >
               {modelPerLangChart && (
-                <div className="h-[320px]"><Bar data={modelPerLangChart} options={horizontalStackedOpts()} /></div>
+                <div style={{ height: horizontalBarHeight(modelPerLangChart.labels?.length ?? 0) }}><Bar data={modelPerLangChart} options={horizontalStackedOpts()} /></div>
               )}
             </Card>
           </div>
