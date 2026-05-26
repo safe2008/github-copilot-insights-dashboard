@@ -227,7 +227,7 @@ export default function PullRequestsPage() {
         subtitle={t("pullRequests.subtitle")}
         actions={<PdfButton />}
       />
-      <ReportFilters onApply={fetchData} onDataRange={setDataRange} showUserFilter={false} sourceLabel="Organization Aggregate" />
+      <ReportFilters onApply={fetchData} onDataRange={setDataRange} showUserFilter={false} teamFilterEnabled={false} sourceLabel="Organization Aggregate" />
       <DataSourceBanner sourceLabel="Organization aggregate data (includes pull request metrics)" />
 
       {loading ? (

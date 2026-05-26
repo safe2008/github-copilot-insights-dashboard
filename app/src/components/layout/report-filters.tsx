@@ -8,7 +8,14 @@ import { useTranslation } from "@/lib/i18n/locale-provider";
 export interface FilterOptions {
   users: Array<{ id: number; login: string; displayLabel: string }>;
   orgs: Array<{ id: number; name: string }>;
-  enterpriseTeams: Array<{ id: number; name: string; slug: string; memberCount: number }>;
+  enterpriseTeams: Array<{
+    id: number;
+    name: string;
+    slug: string;
+    memberCount: number;
+    hasNativeApiData: boolean;
+    filterStrategy: "native" | "members";
+  }>;
 }
 
 export interface DataRange {
@@ -34,6 +41,7 @@ interface ReportFiltersProps {
   onDataRange?: (range: DataRange) => void;
   defaultDays?: number;
   showUserFilter?: boolean;
+  teamFilterEnabled?: boolean;
   sourceLabel?: string;
 }
 
@@ -79,7 +87,14 @@ export function formatDateRangeLabel(start: string, end: string): string {
 
 /* ── ReportFilters ── */
 
-export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUserFilter = true, sourceLabel }: ReportFiltersProps) {
+export function ReportFilters({
+  onApply,
+  onDataRange,
+  defaultDays = 28,
+  showUserFilter = true,
+  teamFilterEnabled = true,
+  sourceLabel,
+}: ReportFiltersProps) {
   const { t } = useTranslation();
   const [startDate, setStartDate] = useState(daysAgoStr(defaultDays));
   const [endDate, setEndDate] = useState(todayStr());
@@ -126,14 +141,14 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
           }
         } else if (!didInit.current) {
           didInit.current = true;
-          onApply({ startDate, endDate, userId, orgId: selectedOrgIds.join(","), teamId: selectedTeamIds.join(",") });
+          onApply({ startDate, endDate, userId, orgId: selectedOrgIds.join(","), teamId: teamFilterEnabled ? selectedTeamIds.join(",") : "" });
         }
       })
       .catch((err) => {
         console.error("Failed to load filter options:", err);
         if (!didInit.current) {
           didInit.current = true;
-          onApply({ startDate, endDate, userId, orgId: selectedOrgIds.join(","), teamId: selectedTeamIds.join(",") });
+          onApply({ startDate, endDate, userId, orgId: selectedOrgIds.join(","), teamId: teamFilterEnabled ? selectedTeamIds.join(",") : "" });
         }
       });
   }, []);// eslint-disable-line react-hooks/exhaustive-deps
@@ -159,7 +174,7 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
     const orgId = selectedOrgIds.includes("enterprise")
       ? "enterprise"
       : selectedOrgIds.join(",");
-    const teamId = selectedTeamIds.join(",");
+    const teamId = teamFilterEnabled ? selectedTeamIds.join(",") : "";
     onApply({ startDate, endDate, userId, orgId, teamId });
   };
 
@@ -329,7 +344,7 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
         </div>
       )}
       {/* Enterprise Team filter — multi-select, only show when teams exist */}
-      {filterOptions.enterpriseTeams.length > 0 && (
+      {teamFilterEnabled && filterOptions.enterpriseTeams.length > 0 && (
         <div ref={teamDropdownRef} className="relative">
           <button
             type="button"
@@ -355,6 +370,14 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
                 />
               </div>
               <ul className="max-h-60 overflow-y-auto py-1">
+                <li className="px-3 py-1 text-[11px] text-gray-500 dark:text-gray-400">
+                  <span className="mr-2 inline-flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Native API
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-violet-500" /> Member fallback
+                  </span>
+                </li>
                 <li>
                   <button
                     type="button"
@@ -389,6 +412,12 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
                           <span className={isSelected ? "font-medium text-blue-700 dark:text-blue-400" : "text-gray-700 dark:text-gray-300"}>
                             {team.name}
                             <span className="ml-1 text-xs text-gray-400 dark:text-gray-500">({team.memberCount})</span>
+                            <span
+                              className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${team.hasNativeApiData ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"}`}
+                              title={team.hasNativeApiData ? "Uses native team IDs from API data" : "Uses enterprise team membership fallback"}
+                            >
+                              {team.hasNativeApiData ? "Native" : "Members"}
+                            </span>
                           </span>
                         </label>
                       </li>
@@ -398,6 +427,11 @@ export function ReportFilters({ onApply, onDataRange, defaultDays = 28, showUser
             </div>
           )}
         </div>
+      )}
+      {!teamFilterEnabled && (
+        <span className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">
+          Team filter unavailable for this report
+        </span>
       )}
       <button
         onClick={handleApply}

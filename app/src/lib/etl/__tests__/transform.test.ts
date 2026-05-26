@@ -135,6 +135,7 @@ describe("transformToFactUsage", () => {
       day: "2026-04-15",
       enterpriseId: 123,
       organizationId: null,
+      sourceTeamGithubId: null,
       userId: 1001,
       userLogin: "testuser",
       userInitiatedInteractionCount: 50,
@@ -264,6 +265,7 @@ describe("transformToFactFeatures", () => {
     expect(rows[0]).toEqual({
       day: "2026-04-15",
       userId: 1001,
+      sourceTeamGithubId: null,
       featureName: "chat",
       userInitiatedInteractionCount: 30,
       codeGenerationActivityCount: 50,
@@ -345,6 +347,7 @@ describe("transformToFactCli", () => {
     expect(rows[0]).toEqual({
       day: "2026-04-15",
       userId: 1001,
+      sourceTeamGithubId: null,
       cliVersion: "1.2.3",
       sessionCount: 5,
       requestCount: 20,

@@ -1264,10 +1264,10 @@ export default function MetricsInfoPage() {
             </thead>
             <tbody className="text-gray-700 dark:text-gray-300">
               {[
-                { ep: "GET /api/metrics/dashboard", desc: "All Copilot Usage dashboard metrics (12 parallel queries)", params: "days, start, end, userId, orgId" },
-                { ep: "GET /api/metrics/agents", desc: "Agent impact metrics (8 parallel queries)", params: "days, start, end, userId, orgId" },
-                { ep: "GET /api/metrics/cli", desc: "CLI impact metrics (11 parallel queries)", params: "days, start, end, userId, orgId" },
-                { ep: "GET /api/metrics/code-generation", desc: "Code generation LOC breakdown from raw JSONB", params: "days, start, end, userId, orgId" },
+                { ep: "GET /api/metrics/dashboard", desc: "All Copilot Usage dashboard metrics (12 parallel queries)", params: "days, start, end, userId, orgId, teamId" },
+                { ep: "GET /api/metrics/agents", desc: "Agent impact metrics (8 parallel queries)", params: "days, start, end, userId, orgId, teamId" },
+                { ep: "GET /api/metrics/cli", desc: "CLI impact metrics (11 parallel queries)", params: "days, start, end, userId, orgId, teamId" },
+                { ep: "GET /api/metrics/code-generation", desc: "Code generation LOC breakdown from raw JSONB", params: "days, start, end, userId, orgId, teamId" },
                 { ep: "GET /api/metrics/pull-requests", desc: "Pull request metrics from org aggregate data", params: "days, start, end, orgId" },
                 { ep: "GET /api/metrics/seats", desc: "Live seat assignments from GitHub Billing API", params: "—" },
                 { ep: "GET /api/metrics/premium-requests", desc: "Live premium request billing from GitHub API", params: "year, month" },

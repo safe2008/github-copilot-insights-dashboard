@@ -11,10 +11,11 @@ import {
   dimLanguage,
   dimUser,
 } from "@/lib/db/schema";
-import { sql, and, gte, lte, eq, inArray } from "drizzle-orm";
+import { sql, and, gte, lte, eq } from "drizzle-orm";
 import { daysAgo, isValidDate } from "@/lib/utils";
 import { z } from "zod";
 import { safeErrorMessage } from "@/lib/auth";
+import { buildTeamAwareCondition, resolveTeamAwareUserFilter } from "@/lib/db/team-filter";
 
 const querySchema = z.object({
   days: z.coerce.number().int().positive().max(365).optional(),
@@ -23,38 +24,8 @@ const querySchema = z.object({
   userId: z.coerce.number().int().optional(),
   teamName: z.string().optional(),
   orgId: z.string().optional(),
+  teamId: z.string().optional(),
 });
-
-/** Parse comma-separated org IDs into number array. */
-function parseOrgIds(orgId?: string): number[] {
-  if (!orgId) return [];
-  return orgId.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
-}
-
-/** Build a list of userIds to filter by (from team/org/user filters). Returns null if no filter. */
-async function resolveUserFilter(params: {
-  userId?: number;
-  teamName?: string;
-  orgId?: string;
-}): Promise<number[] | null> {
-  if (params.userId) return [params.userId];
-
-  const orgIds = parseOrgIds(params.orgId);
-  if (params.teamName || orgIds.length > 0) {
-    const conditions = [eq(dimUser.isCurrent, true)];
-    if (params.teamName) conditions.push(eq(dimUser.teamName, params.teamName));
-    if (orgIds.length === 1) conditions.push(eq(dimUser.orgId, orgIds[0]));
-    else if (orgIds.length > 1) conditions.push(inArray(dimUser.orgId, orgIds));
-
-    const users = await db
-      .select({ userId: dimUser.userId })
-      .from(dimUser)
-      .where(and(...conditions));
-    return users.map((u) => u.userId);
-  }
-
-  return null;
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -66,12 +37,14 @@ export async function GET(request: NextRequest) {
       userId: sp.get("userId") ?? undefined,
       teamName: sp.get("teamName") ?? undefined,
       orgId: sp.get("orgId") ?? undefined,
+      teamId: sp.get("teamId") ?? undefined,
     });
 
     const endDate = params.end ?? new Date().toISOString().split("T")[0];
     const startDate = params.start ?? daysAgo(params.days ?? 28);
 
-    const userIds = await resolveUserFilter(params);
+    const { userIds, teamFilterApplied, selectedGithubTeamIds } =
+      await resolveTeamAwareUserFilter(params);
 
     // Helper: build WHERE conditions for the main fact table
     const mainWhere = () => {
@@ -79,17 +52,31 @@ export async function GET(request: NextRequest) {
         gte(factCopilotUsageDaily.day, startDate),
         lte(factCopilotUsageDaily.day, endDate),
       ];
-      if (userIds) conds.push(inArray(factCopilotUsageDaily.userId, userIds));
+      const teamAware = buildTeamAwareCondition(
+        factCopilotUsageDaily.userId,
+        userIds,
+        teamFilterApplied,
+        selectedGithubTeamIds,
+        factCopilotUsageDaily.sourceTeamGithubId,
+      );
+      if (teamAware) conds.push(teamAware);
       return and(...conds);
     };
 
     // Helper: build WHERE for feature table with date range
-    const featureWhere = (extra?: ReturnType<typeof eq>) => {
-      const conds: ReturnType<typeof eq>[] = [
+    const featureWhere = (extra?: any) => {
+      const conds: any[] = [
         gte(factUserFeatureDaily.day, startDate),
         lte(factUserFeatureDaily.day, endDate),
       ];
-      if (userIds) conds.push(inArray(factUserFeatureDaily.userId, userIds));
+      const teamAware = buildTeamAwareCondition(
+        factUserFeatureDaily.userId,
+        userIds,
+        teamFilterApplied,
+        selectedGithubTeamIds,
+        factUserFeatureDaily.sourceTeamGithubId,
+      );
+      if (teamAware) conds.push(teamAware);
       if (extra) conds.push(extra);
       return and(...conds);
     };
@@ -132,7 +119,13 @@ export async function GET(request: NextRequest) {
         .from(dimUser)
         .where((() => {
           const conds = [eq(dimUser.isCurrent, true)];
-          if (userIds) conds.push(inArray(dimUser.userId, userIds));
+          const teamAware = buildTeamAwareCondition(
+            dimUser.userId,
+            userIds,
+            teamFilterApplied,
+            selectedGithubTeamIds,
+          );
+          if (teamAware) conds.push(teamAware);
           return and(...conds);
         })()),
 
@@ -209,7 +202,14 @@ export async function GET(request: NextRequest) {
             gte(factUserModelDaily.day, startDate),
             lte(factUserModelDaily.day, endDate),
           ];
-          if (userIds) conds.push(inArray(factUserModelDaily.userId, userIds));
+          const teamAware = buildTeamAwareCondition(
+            factUserModelDaily.userId,
+            userIds,
+            teamFilterApplied,
+            selectedGithubTeamIds,
+            factUserModelDaily.sourceTeamGithubId,
+          );
+          if (teamAware) conds.push(teamAware);
           return and(...conds);
         })())
         .groupBy(factUserModelDaily.day, dimModel.modelName)
@@ -228,7 +228,14 @@ export async function GET(request: NextRequest) {
             gte(factUserModelDaily.day, startDate),
             lte(factUserModelDaily.day, endDate),
           ];
-          if (userIds) conds.push(inArray(factUserModelDaily.userId, userIds));
+          const teamAware = buildTeamAwareCondition(
+            factUserModelDaily.userId,
+            userIds,
+            teamFilterApplied,
+            selectedGithubTeamIds,
+            factUserModelDaily.sourceTeamGithubId,
+          );
+          if (teamAware) conds.push(teamAware);
           return and(...conds);
         })())
         .groupBy(dimModel.modelName)
@@ -249,7 +256,14 @@ export async function GET(request: NextRequest) {
             gte(factUserModelDaily.day, startDate),
             lte(factUserModelDaily.day, endDate),
           ];
-          if (userIds) conds.push(inArray(factUserModelDaily.userId, userIds));
+          const teamAware = buildTeamAwareCondition(
+            factUserModelDaily.userId,
+            userIds,
+            teamFilterApplied,
+            selectedGithubTeamIds,
+            factUserModelDaily.sourceTeamGithubId,
+          );
+          if (teamAware) conds.push(teamAware);
           return and(...conds);
         })())
         .groupBy(dimModel.modelName, dimFeature.featureName),
@@ -268,7 +282,14 @@ export async function GET(request: NextRequest) {
             gte(factUserLanguageDaily.day, startDate),
             lte(factUserLanguageDaily.day, endDate),
           ];
-          if (userIds) conds.push(inArray(factUserLanguageDaily.userId, userIds));
+          const teamAware = buildTeamAwareCondition(
+            factUserLanguageDaily.userId,
+            userIds,
+            teamFilterApplied,
+            selectedGithubTeamIds,
+            factUserLanguageDaily.sourceTeamGithubId,
+          );
+          if (teamAware) conds.push(teamAware);
           return and(...conds);
         })())
         .groupBy(factUserLanguageDaily.day, dimLanguage.languageName)
@@ -287,7 +308,14 @@ export async function GET(request: NextRequest) {
             gte(factUserLanguageDaily.day, startDate),
             lte(factUserLanguageDaily.day, endDate),
           ];
-          if (userIds) conds.push(inArray(factUserLanguageDaily.userId, userIds));
+          const teamAware = buildTeamAwareCondition(
+            factUserLanguageDaily.userId,
+            userIds,
+            teamFilterApplied,
+            selectedGithubTeamIds,
+            factUserLanguageDaily.sourceTeamGithubId,
+          );
+          if (teamAware) conds.push(teamAware);
           return and(...conds);
         })())
         .groupBy(dimLanguage.languageName)
@@ -308,7 +336,14 @@ export async function GET(request: NextRequest) {
             gte(factUserLanguageModelDaily.day, startDate),
             lte(factUserLanguageModelDaily.day, endDate),
           ];
-          if (userIds) conds.push(inArray(factUserLanguageModelDaily.userId, userIds));
+          const teamAware = buildTeamAwareCondition(
+            factUserLanguageModelDaily.userId,
+            userIds,
+            teamFilterApplied,
+            selectedGithubTeamIds,
+            factUserLanguageModelDaily.sourceTeamGithubId,
+          );
+          if (teamAware) conds.push(teamAware);
           return and(...conds);
         })())
         .groupBy(dimLanguage.languageName, dimModel.modelName),

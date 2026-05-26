@@ -3,14 +3,14 @@ import { db } from "@/lib/db";
 import {
   factCopilotUsageDaily,
   factCliDaily,
-  dimUser,
 } from "@/lib/db/schema";
-import { sql, and, gte, lte, eq, inArray } from "drizzle-orm";
+import { sql, and, gte, lte, eq } from "drizzle-orm";
 import { daysAgo, isValidDate } from "@/lib/utils";
 import { z } from "zod";
 import { getGitHubConfig } from "@/lib/db/settings";
 import { resolveDisplayNames, formatUserLabel } from "@/lib/github/resolve-display-names";
 import { safeErrorMessage } from "@/lib/auth";
+import { buildTeamAwareCondition, resolveTeamAwareUserFilter } from "@/lib/db/team-filter";
 
 const querySchema = z.object({
   days: z.coerce.number().int().positive().max(365).optional(),
@@ -19,33 +19,8 @@ const querySchema = z.object({
   userId: z.coerce.number().int().optional(),
   teamName: z.string().optional(),
   orgId: z.string().optional(),
+  teamId: z.string().optional(),
 });
-
-function parseOrgIds(orgId?: string): number[] {
-  if (!orgId) return [];
-  return orgId.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
-}
-
-async function resolveUserFilter(params: {
-  userId?: number;
-  teamName?: string;
-  orgId?: string;
-}): Promise<number[] | null> {
-  if (params.userId) return [params.userId];
-  const orgIds = parseOrgIds(params.orgId);
-  if (params.teamName || orgIds.length > 0) {
-    const conditions = [eq(dimUser.isCurrent, true)];
-    if (params.teamName) conditions.push(eq(dimUser.teamName, params.teamName));
-    if (orgIds.length === 1) conditions.push(eq(dimUser.orgId, orgIds[0]));
-    else if (orgIds.length > 1) conditions.push(inArray(dimUser.orgId, orgIds));
-    const users = await db
-      .select({ userId: dimUser.userId })
-      .from(dimUser)
-      .where(and(...conditions));
-    return users.map((u) => u.userId);
-  }
-  return null;
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -57,11 +32,13 @@ export async function GET(request: NextRequest) {
       userId: sp.get("userId") ?? undefined,
       teamName: sp.get("teamName") ?? undefined,
       orgId: sp.get("orgId") ?? undefined,
+      teamId: sp.get("teamId") ?? undefined,
     });
 
     const endDate = params.end ?? new Date().toISOString().split("T")[0];
     const startDate = params.start ?? daysAgo(params.days ?? 28);
-    const userIds = await resolveUserFilter(params);
+    const { userIds, teamFilterApplied, selectedGithubTeamIds } =
+      await resolveTeamAwareUserFilter(params);
 
     // Where clauses for factCopilotUsageDaily (all users)
     const mainWhere = () => {
@@ -69,7 +46,14 @@ export async function GET(request: NextRequest) {
         gte(factCopilotUsageDaily.day, startDate),
         lte(factCopilotUsageDaily.day, endDate),
       ];
-      if (userIds) conds.push(inArray(factCopilotUsageDaily.userId, userIds));
+      const teamAware = buildTeamAwareCondition(
+        factCopilotUsageDaily.userId,
+        userIds,
+        teamFilterApplied,
+        selectedGithubTeamIds,
+        factCopilotUsageDaily.sourceTeamGithubId,
+      );
+      if (teamAware) conds.push(teamAware);
       return and(...conds);
     };
 
@@ -80,7 +64,14 @@ export async function GET(request: NextRequest) {
         lte(factCopilotUsageDaily.day, endDate),
         eq(factCopilotUsageDaily.usedCli, true),
       ];
-      if (userIds) conds.push(inArray(factCopilotUsageDaily.userId, userIds));
+      const teamAware = buildTeamAwareCondition(
+        factCopilotUsageDaily.userId,
+        userIds,
+        teamFilterApplied,
+        selectedGithubTeamIds,
+        factCopilotUsageDaily.sourceTeamGithubId,
+      );
+      if (teamAware) conds.push(teamAware);
       return and(...conds);
     };
 
@@ -90,7 +81,14 @@ export async function GET(request: NextRequest) {
         gte(factCliDaily.day, startDate),
         lte(factCliDaily.day, endDate),
       ];
-      if (userIds) conds.push(inArray(factCliDaily.userId, userIds));
+      const teamAware = buildTeamAwareCondition(
+        factCliDaily.userId,
+        userIds,
+        teamFilterApplied,
+        selectedGithubTeamIds,
+        factCliDaily.sourceTeamGithubId,
+      );
+      if (teamAware) conds.push(teamAware);
       return and(...conds);
     };
 

@@ -304,12 +304,14 @@ async function loadRecords(
         reportDate: record.day,
         enterpriseId: parseInt(String(record.enterprise_id), 10) || 0,
         userId: record.user_id,
+        sourceTeamGithubId: record.team_id ? parseInt(String(record.team_id), 10) || null : null,
         rawJson: record,
         contentHash: hash,
       })
       .onConflictDoUpdate({
         target: [rawCopilotUsage.reportDate, rawCopilotUsage.enterpriseId, rawCopilotUsage.userId],
         set: {
+          sourceTeamGithubId: sql`EXCLUDED.source_team_github_id`,
           rawJson: sql`EXCLUDED.raw_json`,
           contentHash: sql`EXCLUDED.content_hash`,
           ingestedAt: sql`now()`,
@@ -350,6 +352,7 @@ async function loadRecords(
         enterpriseId: factRow.enterpriseId,
         userId: factRow.userId,
         userLogin: factRow.userLogin,
+        sourceTeamGithubId: factRow.sourceTeamGithubId,
         orgId: resolvedOrgId,
         userInitiatedInteractionCount: factRow.userInitiatedInteractionCount,
         codeGenerationActivityCount: factRow.codeGenerationActivityCount,
@@ -375,6 +378,7 @@ async function loadRecords(
         .values({
           day: fr.day,
           userId: fr.userId,
+          sourceTeamGithubId: fr.sourceTeamGithubId,
           featureId: fId,
           userInitiatedInteractionCount: fr.userInitiatedInteractionCount,
           codeGenerationActivityCount: fr.codeGenerationActivityCount,
@@ -393,6 +397,7 @@ async function loadRecords(
         .values({
           day: ir.day,
           userId: ir.userId,
+          sourceTeamGithubId: ir.sourceTeamGithubId,
           ideId: iId,
           userInitiatedInteractionCount: ir.userInitiatedInteractionCount,
           codeGenerationActivityCount: ir.codeGenerationActivityCount,
@@ -412,6 +417,7 @@ async function loadRecords(
         .values({
           day: lr.day,
           userId: lr.userId,
+          sourceTeamGithubId: lr.sourceTeamGithubId,
           languageId: lId,
           featureId: fId,
           userInitiatedInteractionCount: lr.userInitiatedInteractionCount,
@@ -432,6 +438,7 @@ async function loadRecords(
         .values({
           day: mr.day,
           userId: mr.userId,
+          sourceTeamGithubId: mr.sourceTeamGithubId,
           modelId: mId,
           featureId: fId,
           userInitiatedInteractionCount: mr.userInitiatedInteractionCount,
@@ -449,6 +456,7 @@ async function loadRecords(
         .values({
           day: cr.day,
           userId: cr.userId,
+          sourceTeamGithubId: cr.sourceTeamGithubId,
           cliVersion: cr.cliVersion,
           sessionCount: cr.sessionCount,
           requestCount: cr.requestCount,
@@ -471,6 +479,7 @@ async function loadRecords(
         .values({
           day: lmr.day,
           userId: lmr.userId,
+          sourceTeamGithubId: lmr.sourceTeamGithubId,
           languageId: lId,
           modelId: mId,
           codeGenerationActivityCount: lmr.codeGenerationActivityCount,

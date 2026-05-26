@@ -50,6 +50,8 @@ export interface CopilotUsageRecord {
   day: string;
   enterprise_id: string;
   organization_id?: string;
+  team_id?: string | number;
+  team_slug?: string;
   user_id: number;
   user_login: string;
   user_initiated_interaction_count: number;
