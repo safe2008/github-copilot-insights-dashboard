@@ -120,22 +120,24 @@ export default function PullRequestsPage() {
   const daily = data?.daily ?? [];
   const labels = [...new Set(daily.map((d) => d.day))].sort();
 
-  // Aggregate daily data (sum across orgs if multiple)
-  const aggByDay = new Map<string, { created: number; merged: number; copilotCreated: number; copilotMerged: number; ttm: number[]; ttmCopilot: number[]; reviewedByCopilot: number; copilotSuggestions: number; copilotApplied: number; reviewed: number }>();
-  for (const row of daily) {
-    const existing = aggByDay.get(row.day) ?? { created: 0, merged: 0, copilotCreated: 0, copilotMerged: 0, ttm: [], ttmCopilot: [], reviewedByCopilot: 0, copilotSuggestions: 0, copilotApplied: 0, reviewed: 0 };
-    existing.created += row.prTotalCreated ?? 0;
-    existing.merged += row.prTotalMerged ?? 0;
-    existing.copilotCreated += row.prTotalCreatedByCopilot ?? 0;
-    existing.copilotMerged += row.prTotalMergedCreatedByCopilot ?? 0;
-    existing.reviewedByCopilot += row.prTotalReviewedByCopilot ?? 0;
-    existing.copilotSuggestions += row.prTotalCopilotSuggestions ?? 0;
-    existing.copilotApplied += row.prTotalCopilotAppliedSuggestions ?? 0;
-    existing.reviewed += row.prTotalReviewed ?? 0;
-    if (row.prMedianMinutesToMerge) existing.ttm.push(parseFloat(row.prMedianMinutesToMerge));
-    if (row.prMedianMinutesToMergeCopilotAuthored) existing.ttmCopilot.push(parseFloat(row.prMedianMinutesToMergeCopilotAuthored));
-    aggByDay.set(row.day, existing);
-  }
+  const aggByDay = useMemo(() => {
+    const map = new Map<string, { created: number; merged: number; copilotCreated: number; copilotMerged: number; ttm: number[]; ttmCopilot: number[]; reviewedByCopilot: number; copilotSuggestions: number; copilotApplied: number; reviewed: number }>();
+    for (const row of daily) {
+      const existing = map.get(row.day) ?? { created: 0, merged: 0, copilotCreated: 0, copilotMerged: 0, ttm: [], ttmCopilot: [], reviewedByCopilot: 0, copilotSuggestions: 0, copilotApplied: 0, reviewed: 0 };
+      existing.created += row.prTotalCreated ?? 0;
+      existing.merged += row.prTotalMerged ?? 0;
+      existing.copilotCreated += row.prTotalCreatedByCopilot ?? 0;
+      existing.copilotMerged += row.prTotalMergedCreatedByCopilot ?? 0;
+      existing.reviewedByCopilot += row.prTotalReviewedByCopilot ?? 0;
+      existing.copilotSuggestions += row.prTotalCopilotSuggestions ?? 0;
+      existing.copilotApplied += row.prTotalCopilotAppliedSuggestions ?? 0;
+      existing.reviewed += row.prTotalReviewed ?? 0;
+      if (row.prMedianMinutesToMerge) existing.ttm.push(parseFloat(row.prMedianMinutesToMerge));
+      if (row.prMedianMinutesToMergeCopilotAuthored) existing.ttmCopilot.push(parseFloat(row.prMedianMinutesToMergeCopilotAuthored));
+      map.set(row.day, existing);
+    }
+    return map;
+  }, [daily]);
 
   const copilotSuggestionApplyRate = totals?.totalCopilotSuggestions
     ? Math.round((totals.totalCopilotAppliedSuggestions / totals.totalCopilotSuggestions) * 1000) / 10
