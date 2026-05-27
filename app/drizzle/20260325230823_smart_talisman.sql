@@ -1,0 +1,1 @@
+20260325230823_smart_talisman/migration.sql

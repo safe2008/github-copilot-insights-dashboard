@@ -142,6 +142,8 @@ export const rawCopilotUsage = pgTable(
     sourceTeamGithubId: integer("source_team_github_id"),
     rawJson: jsonb("raw_json").notNull(),
     contentHash: varchar("content_hash", { length: 64 }),
+    reportStartDay: date("report_start_day"),
+    reportEndDay: date("report_end_day"),
   },
   (table) => [
     uniqueIndex("idx_raw_unique").on(table.reportDate, table.enterpriseId, table.userId),
@@ -163,8 +165,11 @@ export const factCopilotUsageDaily = pgTable(
     codeAcceptanceActivityCount: integer("code_acceptance_activity_count").default(0).notNull(),
     usedAgent: boolean("used_agent").default(false).notNull(),
     usedCopilotCodingAgent: boolean("used_copilot_coding_agent").default(false).notNull(),
+    usedCopilotCloudAgent: boolean("used_copilot_cloud_agent").default(false).notNull(),
     usedChat: boolean("used_chat").default(false).notNull(),
     usedCli: boolean("used_cli").default(false).notNull(),
+    usedCodeReviewActive: boolean("used_code_review_active").default(false).notNull(),
+    usedCodeReviewPassive: boolean("used_code_review_passive").default(false).notNull(),
     locSuggestedToAddSum: integer("loc_suggested_to_add_sum").default(0).notNull(),
     locSuggestedToDeleteSum: integer("loc_suggested_to_delete_sum").default(0).notNull(),
     locAddedSum: integer("loc_added_sum").default(0).notNull(),
@@ -190,6 +195,10 @@ export const factUserFeatureDaily = pgTable(
     userInitiatedInteractionCount: integer("user_initiated_interaction_count").default(0).notNull(),
     codeGenerationActivityCount: integer("code_generation_activity_count").default(0).notNull(),
     codeAcceptanceActivityCount: integer("code_acceptance_activity_count").default(0).notNull(),
+    locSuggestedToAddSum: integer("loc_suggested_to_add_sum").default(0).notNull(),
+    locSuggestedToDeleteSum: integer("loc_suggested_to_delete_sum").default(0).notNull(),
+    locAddedSum: integer("loc_added_sum").default(0).notNull(),
+    locDeletedSum: integer("loc_deleted_sum").default(0).notNull(),
   },
   (table) => [
     uniqueIndex("idx_fact_feature_unique").on(table.day, table.userId, table.featureId),
@@ -207,6 +216,10 @@ export const factUserIdeDaily = pgTable(
     userInitiatedInteractionCount: integer("user_initiated_interaction_count").default(0).notNull(),
     codeGenerationActivityCount: integer("code_generation_activity_count").default(0).notNull(),
     codeAcceptanceActivityCount: integer("code_acceptance_activity_count").default(0).notNull(),
+    locSuggestedToAddSum: integer("loc_suggested_to_add_sum").default(0).notNull(),
+    locSuggestedToDeleteSum: integer("loc_suggested_to_delete_sum").default(0).notNull(),
+    locAddedSum: integer("loc_added_sum").default(0).notNull(),
+    locDeletedSum: integer("loc_deleted_sum").default(0).notNull(),
   },
   (table) => [
     uniqueIndex("idx_fact_ide_unique").on(table.day, table.userId, table.ideId),
@@ -280,9 +293,28 @@ export const factCliDaily = pgTable(
     promptTokens: integer("prompt_tokens").default(0).notNull(),
     completionTokens: integer("completion_tokens").default(0).notNull(),
     totalTokens: integer("total_tokens").default(0).notNull(),
+    avgTokensPerRequest: numeric("avg_tokens_per_request"),
   },
   (table) => [
     uniqueIndex("idx_fact_cli_unique").on(table.day, table.userId, table.cliVersion),
+  ]
+);
+
+// IDE/Plugin version tracking
+export const factUserIdeVersionDaily = pgTable(
+  "fact_user_ide_version_daily",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    day: date("day").notNull(),
+    userId: integer("user_id").notNull(),
+    ideId: integer("ide_id").notNull().references(() => dimIde.ideId),
+    ideVersion: varchar("ide_version", { length: 100 }),
+    pluginName: varchar("plugin_name", { length: 100 }),
+    pluginVersion: varchar("plugin_version", { length: 100 }),
+    sampledAt: timestamp("sampled_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("idx_fact_ide_version_unique").on(table.day, table.userId, table.ideId),
   ]
 );
 

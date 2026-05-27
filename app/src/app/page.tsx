@@ -4,7 +4,6 @@ import Link from "next/link";
 import Image from "next/image";
 import {
   BarChart3,
-  Bot,
   BookOpen,
   CreditCard,
   GitPullRequest,
@@ -13,8 +12,9 @@ import {
   Network,
   ArrowRight,
   Code,
-  Terminal,
 } from "lucide-react";
+import { AgentIcon } from "@/components/icons/agent-icon";
+import { CliIcon } from "@/components/icons/cli-icon";
 import { useTranslation } from "@/lib/i18n/locale-provider";
 import { ConfigurationBanner } from "@/components/layout/configuration-banner";
 
@@ -47,14 +47,14 @@ export default function LandingPage() {
       title: t("landing.agentImpact"),
       description: t("landing.agentImpactDesc"),
       href: "/agents",
-      icon: Bot,
+      icon: AgentIcon,
       color: "text-purple-600 bg-purple-50 dark:bg-purple-900/30 dark:text-purple-400",
     },
     {
       title: t("landing.cliImpact"),
       description: t("landing.cliImpactDesc"),
       href: "/cli",
-      icon: Terminal,
+      icon: CliIcon,
       color: "text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400",
     },
     {
@@ -103,8 +103,8 @@ export default function LandingPage() {
           <Image
             src="/copilot-icon.svg"
             alt="GitHub Copilot"
-            width={72}
-            height={72}
+            width={128}
+            height={128}
             priority
           />
         </div>

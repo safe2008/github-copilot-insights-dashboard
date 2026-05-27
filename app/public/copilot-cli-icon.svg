@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <!-- Background -->
+  <rect width="120" height="120" rx="16" fill="#2B2D3D"/>
+  <!-- Left eye -->
+  <rect x="28" y="24" width="24" height="28" rx="5" stroke="#4EEADF" stroke-width="3.5" fill="none"/>
+  <!-- Right eye -->
+  <rect x="68" y="24" width="24" height="28" rx="5" stroke="#4EEADF" stroke-width="3.5" fill="none"/>
+  <!-- Left cheek -->
+  <rect x="14" y="66" width="22" height="30" rx="4" fill="#E879A8"/>
+  <!-- Right cheek -->
+  <rect x="84" y="66" width="22" height="30" rx="4" fill="#E879A8"/>
+  <!-- Mouth background -->
+  <rect x="36" y="70" width="48" height="22" rx="5" fill="#E879A8"/>
+  <!-- Teeth -->
+  <rect x="42" y="74" width="8" height="14" rx="2" fill="#7CDB8A"/>
+  <rect x="56" y="74" width="8" height="14" rx="2" fill="#7CDB8A"/>
+  <rect x="70" y="74" width="8" height="14" rx="2" fill="#D4E8D8"/>
+</svg>

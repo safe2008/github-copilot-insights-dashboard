@@ -81,8 +81,11 @@ export interface FactUsageDailyRow {
   codeAcceptanceActivityCount: number;
   usedAgent: boolean;
   usedCopilotCodingAgent: boolean;
+  usedCopilotCloudAgent: boolean;
   usedChat: boolean;
   usedCli: boolean;
+  usedCodeReviewActive: boolean;
+  usedCodeReviewPassive: boolean;
   locSuggestedToAddSum: number;
   locSuggestedToDeleteSum: number;
   locAddedSum: number;
@@ -97,6 +100,10 @@ export interface FactFeatureRow {
   userInitiatedInteractionCount: number;
   codeGenerationActivityCount: number;
   codeAcceptanceActivityCount: number;
+  locSuggestedToAddSum: number;
+  locSuggestedToDeleteSum: number;
+  locAddedSum: number;
+  locDeletedSum: number;
 }
 
 export interface FactIdeRow {
@@ -107,6 +114,20 @@ export interface FactIdeRow {
   userInitiatedInteractionCount: number;
   codeGenerationActivityCount: number;
   codeAcceptanceActivityCount: number;
+  locSuggestedToAddSum: number;
+  locSuggestedToDeleteSum: number;
+  locAddedSum: number;
+  locDeletedSum: number;
+}
+
+export interface FactIdeVersionRow {
+  day: string;
+  userId: number;
+  ideName: string;
+  ideVersion: string | null;
+  pluginName: string | null;
+  pluginVersion: string | null;
+  sampledAt: string | null;
 }
 
 export interface FactLanguageRow {
@@ -152,6 +173,7 @@ export interface FactCliRow {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  avgTokensPerRequest: string | null;
 }
 
 // ── Transform Functions ──
@@ -169,8 +191,11 @@ export function transformToFactUsage(record: CopilotUsageRecord): FactUsageDaily
     codeAcceptanceActivityCount: record.code_acceptance_activity_count ?? 0,
     usedAgent: record.used_agent ?? false,
     usedCopilotCodingAgent: record.used_copilot_coding_agent ?? false,
+    usedCopilotCloudAgent: record.used_copilot_cloud_agent ?? false,
     usedChat: record.used_chat ?? false,
     usedCli: record.used_cli ?? false,
+    usedCodeReviewActive: record.used_copilot_code_review_active ?? false,
+    usedCodeReviewPassive: record.used_copilot_code_review_passive ?? false,
     locSuggestedToAddSum: record.loc_suggested_to_add_sum ?? 0,
     locSuggestedToDeleteSum: record.loc_suggested_to_delete_sum ?? 0,
     locAddedSum: record.loc_added_sum ?? 0,
@@ -187,6 +212,10 @@ export function transformToFactFeatures(record: CopilotUsageRecord): FactFeature
     userInitiatedInteractionCount: f.user_initiated_interaction_count ?? 0,
     codeGenerationActivityCount: f.code_generation_activity_count ?? 0,
     codeAcceptanceActivityCount: f.code_acceptance_activity_count ?? 0,
+    locSuggestedToAddSum: f.loc_suggested_to_add_sum ?? 0,
+    locSuggestedToDeleteSum: f.loc_suggested_to_delete_sum ?? 0,
+    locAddedSum: f.loc_added_sum ?? 0,
+    locDeletedSum: f.loc_deleted_sum ?? 0,
   }));
 }
 
@@ -199,7 +228,25 @@ export function transformToFactIdes(record: CopilotUsageRecord): FactIdeRow[] {
     userInitiatedInteractionCount: ide.user_initiated_interaction_count ?? 0,
     codeGenerationActivityCount: ide.code_generation_activity_count ?? 0,
     codeAcceptanceActivityCount: ide.code_acceptance_activity_count ?? 0,
+    locSuggestedToAddSum: ide.loc_suggested_to_add_sum ?? 0,
+    locSuggestedToDeleteSum: ide.loc_suggested_to_delete_sum ?? 0,
+    locAddedSum: ide.loc_added_sum ?? 0,
+    locDeletedSum: ide.loc_deleted_sum ?? 0,
   }));
+}
+
+export function transformToFactIdeVersions(record: CopilotUsageRecord): FactIdeVersionRow[] {
+  return (record.totals_by_ide ?? [])
+    .filter((ide) => ide.last_known_ide_version || ide.last_known_plugin_version)
+    .map((ide) => ({
+      day: record.day,
+      userId: record.user_id,
+      ideName: ide.ide,
+      ideVersion: ide.last_known_ide_version?.ide_version ?? null,
+      pluginName: ide.last_known_plugin_version?.plugin ?? null,
+      pluginVersion: ide.last_known_plugin_version?.plugin_version ?? null,
+      sampledAt: ide.last_known_plugin_version?.sampled_at ?? ide.last_known_ide_version?.sampled_at ?? null,
+    }));
 }
 
 export function transformToFactLanguages(record: CopilotUsageRecord): FactLanguageRow[] {
@@ -246,6 +293,9 @@ export function transformToFactCli(record: CopilotUsageRecord): FactCliRow[] {
     promptTokens,
     completionTokens: outputTokens,
     totalTokens: promptTokens + outputTokens,
+    avgTokensPerRequest: cli.token_usage?.avg_tokens_per_request != null
+      ? String(cli.token_usage.avg_tokens_per_request)
+      : null,
   }];
 }
 

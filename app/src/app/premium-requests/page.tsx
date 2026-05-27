@@ -210,10 +210,10 @@ export default function PremiumRequestsPage() {
     const { includedUsed, overage, includedQuota } = data.totals;
     const remaining = Math.max(0, includedQuota - includedUsed);
     return {
-      labels: ["Included (Used)", "Included (Remaining)", "Overage (Paid)"],
+      labels: ["Consumed PRUs", "Remaining PRUs", "Additional Usage"],
       datasets: [{
         data: [includedUsed, remaining, overage],
-        backgroundColor: ["#22c55e", "#d1fae5", "#ef4444"],
+        backgroundColor: ["#22c55e", "#d1fae5", "#6366f1"],
         borderWidth: 0,
       }],
     };
@@ -279,8 +279,8 @@ export default function PremiumRequestsPage() {
           label: "Net Spend ($)",
           data: data.dailyTrend.map((d) => Number(d.netAmount.toFixed(2))),
           yAxisID: "y1",
-          borderColor: "#ef4444",
-          backgroundColor: "#ef4444",
+          borderColor: "#6366f1",
+          backgroundColor: "#6366f1",
           tension: 0.25,
           pointRadius: 2,
         },
@@ -295,13 +295,87 @@ export default function PremiumRequestsPage() {
       datasets: [{
         label: "Net Spend ($)",
         data: data.monthlyTrend.map((m) => m.netAmount),
-        borderColor: "#ef4444",
-        backgroundColor: "rgba(239,68,68,0.2)",
+        borderColor: "#6366f1",
+        backgroundColor: "rgba(99,102,241,0.2)",
         fill: true,
         tension: 0.3,
       }],
     };
   }, [data]);
+
+  // ── Top spend drivers horizontal bar (Executive Summary) ──
+  const topDriversBar = useMemo(() => {
+    if (!data || data.perModelBreakdown.length === 0) return null;
+    const top = data.perModelBreakdown.slice(0, 5);
+    return {
+      labels: top.map((d) => d.sku),
+      datasets: [{
+        label: "Net Spend ($)",
+        data: top.map((d) => d.netAmount),
+        backgroundColor: ["#8b5cf6", "#a855f7", "#6366f1", "#3b82f6", "#14b8a6"],
+        borderRadius: 6,
+      }],
+    };
+  }, [data]);
+
+  // ── Change vs Previous month comparison bar ──
+  const changeComparisonBar = useMemo(() => {
+    if (!data || !data.changeVsPrevious) return null;
+    const prev = data.totals.totalPremiumRequests - data.changeVsPrevious.requestsDelta;
+    const prevSpend = data.totals.netAmount - data.changeVsPrevious.netAmountDelta;
+    return {
+      labels: ["Requests", "Net Spend ($)"],
+      datasets: [
+        {
+          label: "Previous Month",
+          data: [prev, Number(prevSpend.toFixed(2))],
+          backgroundColor: "#cbd5e1",
+          borderRadius: 6,
+        },
+        {
+          label: "Current Month",
+          data: [data.totals.totalPremiumRequests, Number(data.totals.netAmount.toFixed(2))],
+          backgroundColor: "#6366f1",
+          borderRadius: 6,
+        },
+      ],
+    };
+  }, [data]);
+
+  // ── Budget burn-down doughnut ──
+  const budgetBurnDonut = useMemo(() => {
+    if (!data) return null;
+    const { includedUsed, includedQuota, overage } = data.totals;
+    const remaining = Math.max(0, includedQuota - includedUsed);
+    return {
+      labels: ["Consumed PRUs", "Remaining PRUs", "Additional Usage"],
+      datasets: [{
+        data: [includedUsed, remaining, overage],
+        backgroundColor: ["#6366f1", "#e0e7ff", "#f59e0b"],
+        borderWidth: 0,
+      }],
+    };
+  }, [data]);
+
+  // ── Efficiency metrics horizontal bar ──
+  const efficiencyBar = useMemo(() => {
+    if (!data) return null;
+    const ca = dashboardOverlay?.kpis?.totalCodeAccept ?? 0;
+    const mp = prOverlay?.totals?.totalMerged ?? 0;
+    const rp = prOverlay?.totals?.totalReviewed ?? 0;
+    const costAccept = ca > 0 ? Number((data.totals.netAmount / ca).toFixed(2)) : 0;
+    const costMerge = mp > 0 ? Number((data.totals.netAmount / mp).toFixed(2)) : 0;
+    const costReview = rp > 0 ? Number((data.totals.netAmount / rp).toFixed(2)) : 0;
+    return {
+      labels: ["Per Accepted Generation", "Per Merged PR", "Per Reviewed PR"],
+      datasets: [{
+        label: "Cost ($)",
+        data: [costAccept, costMerge, costReview],
+        backgroundColor: ["#22c55e", "#3b82f6", "#f59e0b"],
+        borderRadius: 6,
+      }],
+    };
+  }, [data, dashboardOverlay, prOverlay]);
 
   const goMonth = (delta: number) => {
     let m = month + delta;
@@ -367,12 +441,6 @@ export default function PremiumRequestsPage() {
   const mergedPrs = prOverlay?.totals?.totalMerged ?? 0;
   const reviewedPrs = prOverlay?.totals?.totalReviewed ?? 0;
 
-  const costPerAcceptedGen = codeAccepts > 0 ? totals.netAmount / codeAccepts : 0;
-  const costPerMergedPr = mergedPrs > 0 ? totals.netAmount / mergedPrs : 0;
-  const costPerReviewedPr = reviewedPrs > 0 ? totals.netAmount / reviewedPrs : 0;
-
-  const topDrivers = data.perModelBreakdown.slice(0, 3);
-
   return (
     <div ref={reportRef} className="space-y-6">
       <ConfigurationBanner />
@@ -435,70 +503,108 @@ export default function PremiumRequestsPage() {
         <Kpi label={t("premiumRequests.totalPremiumRequests")} value={fmtNum(totals.totalPremiumRequests)} />
         <Kpi label={t("premiumRequests.includedQuota")} value={fmtNum(totals.includedQuota)} color="text-green-600" />
         <Kpi label={t("premiumRequests.includedUsed")} value={fmtNum(totals.includedUsed)} color="text-green-600" />
-        <Kpi label={t("premiumRequests.overagePaid")} value={fmtNum(totals.overage)} color={totals.overage > 0 ? "text-red-600" : "text-gray-900"} />
-        <Kpi label={t("premiumRequests.utilizationLabel")} value={`${utilizationPct}%`} color={utilizationPct > 100 ? "text-red-600" : utilizationPct > 80 ? "text-amber-600" : "text-green-600"} />
-        <Kpi label={t("premiumRequests.overageCost")} value={fmt$(totals.netAmount)} color={totals.netAmount > 0 ? "text-red-600" : "text-gray-900"} />
+        <Kpi label={t("premiumRequests.overagePaid")} value={fmtNum(totals.overage)} color={totals.overage > 0 ? "text-blue-600" : "text-gray-900"} />
+        <Kpi label={t("premiumRequests.utilizationLabel")} value={`${utilizationPct}%`} color={utilizationPct > 100 ? "text-blue-600" : utilizationPct > 80 ? "text-amber-600" : "text-green-600"} />
+        <Kpi label={t("premiumRequests.overageCost")} value={fmt$(totals.netAmount)} color={totals.netAmount > 0 ? "text-blue-600" : "text-gray-900"} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card title="Executive Summary" subtitle="Spend status, overage, and forecast for the selected period">
-          <div className="space-y-2 text-sm">
-            <p><span className="font-medium">Total spend:</span> {fmt$(totals.netAmount)}</p>
-            <p><span className="font-medium">Overage rate:</span> {overagePct}%</p>
-            <p><span className="font-medium">Projected EOM spend:</span> {fmt$(projectedEomSpend)}</p>
-            <div>
-              <p className="font-medium">Top spend drivers:</p>
-              <ul className="mt-1 list-inside list-disc text-gray-600 dark:text-gray-300">
-                {topDrivers.length > 0 ? topDrivers.map((d) => (
-                  <li key={d.sku}>{d.sku}: {fmt$(d.netAmount)}</li>
-                )) : <li>No model driver data available</li>}
-              </ul>
+        <Card title="Executive Summary" subtitle="Usage status, additional usage, and forecast for the selected period">
+          <div className="mb-3 grid grid-cols-3 gap-3">
+            <div className="rounded-md bg-gray-50 p-2 text-center dark:bg-gray-700/50">
+              <p className="text-xs text-gray-500 dark:text-gray-400">Total Spend</p>
+              <p className="text-lg font-bold text-gray-900 dark:text-gray-100">{fmt$(totals.netAmount)}</p>
+            </div>
+            <div className="rounded-md bg-gray-50 p-2 text-center dark:bg-gray-700/50">
+              <p className="text-xs text-gray-500 dark:text-gray-400">Additional Usage Rate</p>
+              <p className="text-lg font-bold text-blue-600 dark:text-blue-400">{overagePct}%</p>
+            </div>
+            <div className="rounded-md bg-gray-50 p-2 text-center dark:bg-gray-700/50">
+              <p className="text-xs text-gray-500 dark:text-gray-400">EOM Forecast</p>
+              <p className="text-lg font-bold text-gray-900 dark:text-gray-100">{fmt$(projectedEomSpend)}</p>
             </div>
           </div>
-        </Card>
-
-        <Card title="What Changed (vs previous month)" subtitle="Period-over-period deltas for demand and spend">
-          {data.changeVsPrevious ? (
-            <div className="space-y-2 text-sm">
-              <p>
-                <span className="font-medium">Requests:</span>{" "}
-                {fmtDelta(data.changeVsPrevious.requestsDelta)}
-                {data.changeVsPrevious.requestsDeltaPct !== null ? ` (${fmtDelta(data.changeVsPrevious.requestsDeltaPct, "%")})` : ""}
-              </p>
-              <p>
-                <span className="font-medium">Net spend:</span>{" "}
-                {fmtDelta(Number(data.changeVsPrevious.netAmountDelta.toFixed(2)), "")}
-                {data.changeVsPrevious.netAmountDeltaPct !== null ? ` (${fmtDelta(data.changeVsPrevious.netAmountDeltaPct, "%")})` : ""}
-              </p>
-              <p className="text-gray-600 dark:text-gray-300">
-                Use the drill-down filters to identify the model/org/team responsible for the delta.
-              </p>
+          {topDriversBar ? (
+            <div className="h-[180px]">
+              <Bar data={topDriversBar} options={{ ...barOpts, indexAxis: "y" as const, maintainAspectRatio: false, plugins: { ...barOpts.plugins, legend: { display: false } } }} />
             </div>
           ) : (
-            <p className="text-sm text-gray-500">Previous month comparison is not available.</p>
+            <p className="py-4 text-center text-sm text-gray-400">No model driver data available</p>
+          )}
+          <p className="mt-2 text-center text-xs text-gray-500 dark:text-gray-400">Top spend drivers by model</p>
+        </Card>
+
+        <Card title="What Changed (vs previous month)" subtitle="Period-over-period comparison for demand and spend">
+          {changeComparisonBar && data.changeVsPrevious ? (
+            <>
+              <div className="mb-3 grid grid-cols-2 gap-3">
+                <div className="rounded-md bg-gray-50 p-2 text-center dark:bg-gray-700/50">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Requests Change</p>
+                  <p className={`text-lg font-bold ${data.changeVsPrevious.requestsDelta >= 0 ? "text-blue-600 dark:text-blue-400" : "text-green-600 dark:text-green-400"}`}>
+                    {fmtDelta(data.changeVsPrevious.requestsDelta)}
+                    {data.changeVsPrevious.requestsDeltaPct !== null ? ` (${fmtDelta(data.changeVsPrevious.requestsDeltaPct, "%")})` : ""}
+                  </p>
+                </div>
+                <div className="rounded-md bg-gray-50 p-2 text-center dark:bg-gray-700/50">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Spend Change</p>
+                  <p className={`text-lg font-bold ${data.changeVsPrevious.netAmountDelta >= 0 ? "text-blue-600 dark:text-blue-400" : "text-green-600 dark:text-green-400"}`}>
+                    {fmtDelta(Number(data.changeVsPrevious.netAmountDelta.toFixed(2)), "")}
+                    {data.changeVsPrevious.netAmountDeltaPct !== null ? ` (${fmtDelta(data.changeVsPrevious.netAmountDeltaPct, "%")})` : ""}
+                  </p>
+                </div>
+              </div>
+              <div className="h-[180px]">
+                <Bar data={changeComparisonBar} options={{ ...barOpts, maintainAspectRatio: false }} />
+              </div>
+            </>
+          ) : (
+            <p className="py-8 text-center text-sm text-gray-400">Previous month comparison is not available yet.</p>
           )}
         </Card>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card title="Budget & Burn Tracking" subtitle="Quota burn-down and expected depletion timeline">
-          <div className="space-y-2 text-sm">
-            <p><span className="font-medium">Quota remaining:</span> {fmtNum(quotaRemaining)} requests</p>
-            <p><span className="font-medium">Avg daily requests:</span> {fmtNum(Math.round(avgDailyRequests))}</p>
-            <p><span className="font-medium">Days to quota exhaustion:</span> {daysToExhaustion ?? "N/A"}</p>
-            <p><span className="font-medium">Forecasted month-end overage:</span> {fmtNum(Math.max(0, Math.round((avgDailyRequests * daysInMonth(year, month)) - totals.includedQuota)))} requests</p>
+          <div className="flex items-center gap-4">
+            {budgetBurnDonut && (
+              <div className="h-[160px] w-[160px] shrink-0">
+                <Doughnut data={budgetBurnDonut} options={{ ...doughnutOpts, cutout: "65%", maintainAspectRatio: false, plugins: { ...doughnutOpts.plugins, legend: { display: false } } }} />
+              </div>
+            )}
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-3 w-3 rounded-full bg-indigo-500" />
+                <span className="text-gray-600 dark:text-gray-300">Consumed PRUs: <span className="font-medium text-gray-900 dark:text-gray-100">{fmtNum(totals.includedUsed)}</span></span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-3 w-3 rounded-full bg-indigo-200" />
+                <span className="text-gray-600 dark:text-gray-300">Remaining PRUs: <span className="font-medium text-gray-900 dark:text-gray-100">{fmtNum(quotaRemaining)}</span></span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-3 w-3 rounded-full bg-amber-500" />
+                <span className="text-gray-600 dark:text-gray-300">Additional Usage: <span className="font-medium text-gray-900 dark:text-gray-100">{fmtNum(totals.overage)}</span></span>
+              </div>
+              <div className="mt-2 border-t border-gray-100 pt-2 dark:border-gray-700">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Avg daily: <span className="font-medium">{fmtNum(Math.round(avgDailyRequests))}</span></p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Days to depletion: <span className="font-medium">{daysToExhaustion ?? "N/A"}</span></p>
+              </div>
+            </div>
           </div>
         </Card>
 
         <Card title="Efficiency Metrics" subtitle="Cost-to-value overlays from usage and PR outcomes">
-          <div className="space-y-2 text-sm">
-            <p><span className="font-medium">Cost / accepted generation:</span> {fmt$(costPerAcceptedGen)}</p>
-            <p><span className="font-medium">Cost / merged PR:</span> {fmt$(costPerMergedPr)}</p>
-            <p><span className="font-medium">Cost / reviewed PR:</span> {fmt$(costPerReviewedPr)}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Overlay inputs: {fmtNum(codeAccepts)} accepted generations, {fmtNum(mergedPrs)} merged PRs, {fmtNum(reviewedPrs)} reviewed PRs.
-            </p>
-          </div>
+          {efficiencyBar ? (
+            <>
+              <div className="h-[180px]">
+                <Bar data={efficiencyBar} options={{ ...barOpts, indexAxis: "y" as const, maintainAspectRatio: false, plugins: { ...barOpts.plugins, legend: { display: false } } }} />
+              </div>
+              <p className="mt-2 text-center text-xs text-gray-500 dark:text-gray-400">
+                Based on {fmtNum(codeAccepts)} accepted generations, {fmtNum(mergedPrs)} merged PRs, {fmtNum(reviewedPrs)} reviewed PRs
+              </p>
+            </>
+          ) : (
+            <p className="py-8 text-center text-sm text-gray-400">No overlay data available</p>
+          )}
         </Card>
       </div>
 
@@ -533,18 +639,18 @@ export default function PremiumRequestsPage() {
           )}
         </Card>
 
-        <Card title="Actionable Recommendations" subtitle="Suggested governance actions based on detected spend patterns">
+        <Card title="Actionable Recommendations" subtitle="Suggested actions to optimize spend and maximize value">
           <ul className="list-inside list-disc space-y-2 text-sm text-gray-700 dark:text-gray-300">
-            {totals.overage > 0 && <li>High overage detected — review team/model-level premium usage policies.</li>}
-            {utilizationPct > 90 && <li>Included quota is nearly exhausted — consider budget alerts and early throttling.</li>}
+            {totals.overage > 0 && <li>Additional usage observed — consider reviewing team/model-level premium usage policies for optimization.</li>}
+            {utilizationPct > 90 && <li>Included quota is well-utilized — consider setting up budget alerts and proactive capacity planning.</li>}
             {data.perTeamBreakdown.length > 0 && data.perTeamBreakdown[0].netAmount > totals.netAmount * 0.35 && (
-              <li>Top team contributes &gt;35% of spend — align that team on model guardrails.</li>
+              <li>Top team accounts for &gt;35% of spend — opportunity to align that team on model guardrails.</li>
             )}
             {data.perModelBreakdown.length > 0 && data.perModelBreakdown[0].netAmount > totals.netAmount * 0.5 && (
-              <li>Single model dominates spend — review whether lower-cost alternatives can cover common workflows.</li>
+              <li>Single model drives majority of spend — explore whether cost-efficient alternatives can serve common workflows.</li>
             )}
             {totals.overage === 0 && utilizationPct <= 90 && (
-              <li>Spend is healthy — keep current policy and monitor month-over-month changes.</li>
+              <li>Spend is on track — current policies are effective. Continue monitoring month-over-month trends.</li>
             )}
           </ul>
         </Card>
@@ -578,8 +684,8 @@ export default function PremiumRequestsPage() {
               <tr className="border-b border-gray-200 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:border-gray-700 dark:text-gray-400">
                 <th className="pb-2 pr-4">Plan</th>
                 <th className="pb-2 pr-4 text-right">Seats</th>
-                <th className="pb-2 pr-4 text-right">Quota / Seat</th>
-                <th className="pb-2 text-right">Total Quota</th>
+                <th className="pb-2 pr-4 text-right">PRUs / Seat</th>
+                <th className="pb-2 text-right">Total PRUs</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -651,8 +757,8 @@ export default function PremiumRequestsPage() {
       <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-300">
         <p className="font-medium">About premium request billing</p>
         <p className="mt-1 text-xs text-blue-700 dark:text-blue-400">
-          Each Copilot Business seat includes 300 premium requests/month and each Enterprise seat includes 1,000.
-          Usage beyond the included quota is billed at $0.04 per request.
+          Each Copilot Business seat includes 300 PRUs/month and each Enterprise seat includes 1,000.
+          Usage beyond the included PRUs is billed at $0.04 per request.
           Data is sourced from GitHub billing usage APIs and enriched with dashboard overlay metrics.
         </p>
       </div>

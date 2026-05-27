@@ -48,6 +48,8 @@ export interface EnterpriseTeamMember {
 
 export interface CopilotUsageRecord {
   day: string;
+  report_start_day?: string;
+  report_end_day?: string;
   enterprise_id: string;
   organization_id?: string;
   team_id?: string | number;
@@ -59,8 +61,11 @@ export interface CopilotUsageRecord {
   code_acceptance_activity_count: number;
   used_agent: boolean;
   used_copilot_coding_agent: boolean;
+  used_copilot_cloud_agent?: boolean;
   used_chat: boolean;
   used_cli: boolean;
+  used_copilot_code_review_active?: boolean;
+  used_copilot_code_review_passive?: boolean;
   loc_suggested_to_add_sum: number;
   loc_suggested_to_delete_sum: number;
   loc_added_sum: number;

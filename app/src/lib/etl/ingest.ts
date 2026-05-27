@@ -16,6 +16,7 @@ import {
   factUserModelDaily,
   factCliDaily,
   factUserLanguageModelDaily,
+  factUserIdeVersionDaily,
   factOrgAggregateDaily,
   dimIde,
   dimFeature,
@@ -32,6 +33,7 @@ import {
   transformToFactUsage,
   transformToFactFeatures,
   transformToFactIdes,
+  transformToFactIdeVersions,
   transformToFactLanguages,
   transformToFactModels,
   transformToFactCli,
@@ -307,6 +309,8 @@ async function loadRecords(
         sourceTeamGithubId: record.team_id ? parseInt(String(record.team_id), 10) || null : null,
         rawJson: record,
         contentHash: hash,
+        reportStartDay: record.report_start_day ?? null,
+        reportEndDay: record.report_end_day ?? null,
       })
       .onConflictDoUpdate({
         target: [rawCopilotUsage.reportDate, rawCopilotUsage.enterpriseId, rawCopilotUsage.userId],
@@ -314,6 +318,8 @@ async function loadRecords(
           sourceTeamGithubId: sql`EXCLUDED.source_team_github_id`,
           rawJson: sql`EXCLUDED.raw_json`,
           contentHash: sql`EXCLUDED.content_hash`,
+          reportStartDay: sql`EXCLUDED.report_start_day`,
+          reportEndDay: sql`EXCLUDED.report_end_day`,
           ingestedAt: sql`now()`,
         },
       });
@@ -359,8 +365,11 @@ async function loadRecords(
         codeAcceptanceActivityCount: factRow.codeAcceptanceActivityCount,
         usedAgent: factRow.usedAgent,
         usedCopilotCodingAgent: factRow.usedCopilotCodingAgent,
+        usedCopilotCloudAgent: factRow.usedCopilotCloudAgent,
         usedChat: factRow.usedChat,
         usedCli: factRow.usedCli,
+        usedCodeReviewActive: factRow.usedCodeReviewActive,
+        usedCodeReviewPassive: factRow.usedCodeReviewPassive,
         locSuggestedToAddSum: factRow.locSuggestedToAddSum,
         locSuggestedToDeleteSum: factRow.locSuggestedToDeleteSum,
         locAddedSum: factRow.locAddedSum,
@@ -383,6 +392,10 @@ async function loadRecords(
           userInitiatedInteractionCount: fr.userInitiatedInteractionCount,
           codeGenerationActivityCount: fr.codeGenerationActivityCount,
           codeAcceptanceActivityCount: fr.codeAcceptanceActivityCount,
+          locSuggestedToAddSum: fr.locSuggestedToAddSum,
+          locSuggestedToDeleteSum: fr.locSuggestedToDeleteSum,
+          locAddedSum: fr.locAddedSum,
+          locDeletedSum: fr.locDeletedSum,
         })
         .onConflictDoNothing();
     }
@@ -402,6 +415,29 @@ async function loadRecords(
           userInitiatedInteractionCount: ir.userInitiatedInteractionCount,
           codeGenerationActivityCount: ir.codeGenerationActivityCount,
           codeAcceptanceActivityCount: ir.codeAcceptanceActivityCount,
+          locSuggestedToAddSum: ir.locSuggestedToAddSum,
+          locSuggestedToDeleteSum: ir.locSuggestedToDeleteSum,
+          locAddedSum: ir.locAddedSum,
+          locDeletedSum: ir.locDeletedSum,
+        })
+        .onConflictDoNothing();
+    }
+
+    // IDE version tracking
+    const ideVersionRows = transformToFactIdeVersions(record);
+    for (const iv of ideVersionRows) {
+      const iId = ideMap.get(iv.ideName);
+      if (!iId) continue;
+      await db
+        .insert(factUserIdeVersionDaily)
+        .values({
+          day: iv.day,
+          userId: iv.userId,
+          ideId: iId,
+          ideVersion: iv.ideVersion,
+          pluginName: iv.pluginName,
+          pluginVersion: iv.pluginVersion,
+          sampledAt: iv.sampledAt ? new Date(iv.sampledAt) : null,
         })
         .onConflictDoNothing();
     }
@@ -464,6 +500,7 @@ async function loadRecords(
           promptTokens: cr.promptTokens,
           completionTokens: cr.completionTokens,
           totalTokens: cr.totalTokens,
+          avgTokensPerRequest: cr.avgTokensPerRequest,
         })
         .onConflictDoNothing();
     }

@@ -9,14 +9,12 @@ import { useTranslation } from "@/lib/i18n/locale-provider";
 import {
   Contact,
   Network,
-  Bot,
   Code,
   BarChart3,
   BookOpen,
   CreditCard,
   Settings,
   Sparkles,
-  Terminal,
   GitPullRequest,
   LogOut,
   Sun,
@@ -24,13 +22,15 @@ import {
   Monitor,
   Globe,
 } from "lucide-react";
+import { AgentIcon } from "@/components/icons/agent-icon";
+import { CliIcon } from "@/components/icons/cli-icon";
 
 const NAV_KEYS = [
   { key: "nav.copilotUsage", href: "/metrics", icon: BarChart3 },
   { key: "nav.codeGeneration", href: "/code-generation", icon: Code },
   { key: "nav.pullRequests", href: "/pull-requests", icon: GitPullRequest },
-  { key: "nav.agentImpact", href: "/agents", icon: Bot },
-  { key: "nav.cliImpact", href: "/cli", icon: Terminal },
+  { key: "nav.agentImpact", href: "/agents", icon: AgentIcon },
+  { key: "nav.cliImpact", href: "/cli", icon: CliIcon },
   { key: "nav.copilotLicensing", href: "/seats", icon: CreditCard },
   { key: "nav.premiumRequests", href: "/premium-requests", icon: Sparkles },
   { key: "nav.usersData", href: "/users", icon: Contact },

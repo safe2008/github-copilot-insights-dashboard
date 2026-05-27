@@ -143,8 +143,11 @@ describe("transformToFactUsage", () => {
       codeAcceptanceActivityCount: 75,
       usedAgent: true,
       usedCopilotCodingAgent: false,
+      usedCopilotCloudAgent: false,
       usedChat: true,
       usedCli: false,
+      usedCodeReviewActive: false,
+      usedCodeReviewPassive: false,
       locSuggestedToAddSum: 500,
       locSuggestedToDeleteSum: 100,
       locAddedSum: 300,
@@ -270,6 +273,10 @@ describe("transformToFactFeatures", () => {
       userInitiatedInteractionCount: 30,
       codeGenerationActivityCount: 50,
       codeAcceptanceActivityCount: 40,
+      locSuggestedToAddSum: 0,
+      locSuggestedToDeleteSum: 0,
+      locAddedSum: 0,
+      locDeletedSum: 0,
     });
   });
 
@@ -355,6 +362,7 @@ describe("transformToFactCli", () => {
       promptTokens: 1000,
       completionTokens: 500,
       totalTokens: 1500,
+      avgTokensPerRequest: "75",
     });
   });
 

@@ -107,6 +107,9 @@ export async function GET(request: NextRequest) {
           agentUsers: sql<number>`COUNT(DISTINCT ${factCopilotUsageDaily.userId}) FILTER (WHERE ${factCopilotUsageDaily.usedAgent} = true)`,
           chatUsers: sql<number>`COUNT(DISTINCT ${factCopilotUsageDaily.userId}) FILTER (WHERE ${factCopilotUsageDaily.usedChat} = true)`,
           cliUsers: sql<number>`COUNT(DISTINCT ${factCopilotUsageDaily.userId}) FILTER (WHERE ${factCopilotUsageDaily.usedCli} = true)`,
+          cloudAgentUsers: sql<number>`COUNT(DISTINCT ${factCopilotUsageDaily.userId}) FILTER (WHERE ${factCopilotUsageDaily.usedCopilotCloudAgent} = true)`,
+          codeReviewActiveUsers: sql<number>`COUNT(DISTINCT ${factCopilotUsageDaily.userId}) FILTER (WHERE ${factCopilotUsageDaily.usedCodeReviewActive} = true)`,
+          codeReviewPassiveUsers: sql<number>`COUNT(DISTINCT ${factCopilotUsageDaily.userId}) FILTER (WHERE ${factCopilotUsageDaily.usedCodeReviewPassive} = true)`,
         })
         .from(factCopilotUsageDaily)
         .where(mainWhere()),
@@ -394,6 +397,9 @@ export async function GET(request: NextRequest) {
           : 0,
         chatUsers: kpi.chatUsers,
         cliUsers: kpi.cliUsers,
+        cloudAgentUsers: kpi.cloudAgentUsers,
+        codeReviewActiveUsers: kpi.codeReviewActiveUsers,
+        codeReviewPassiveUsers: kpi.codeReviewPassiveUsers,
         totalInteractions: kpi.totalInteractions,
         totalCodeGen: kpi.totalCodeGen,
         totalCodeAccept: kpi.totalCodeAccept,

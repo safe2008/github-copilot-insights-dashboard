@@ -128,6 +128,7 @@ export async function GET(request: NextRequest) {
           totalPromptTokens: sql<number>`COALESCE(SUM(${factCliDaily.promptTokens}), 0)`,
           totalCompletionTokens: sql<number>`COALESCE(SUM(${factCliDaily.completionTokens}), 0)`,
           totalTokens: sql<number>`COALESCE(SUM(${factCliDaily.totalTokens}), 0)`,
+          avgTokensPerRequest: sql<number>`ROUND(AVG(${factCliDaily.avgTokensPerRequest}::numeric), 2)`,
         })
         .from(factCliDaily)
         .where(cliFactWhere()),
@@ -330,6 +331,7 @@ export async function GET(request: NextRequest) {
         totalTokens: cliKpi.totalTokens,
         totalPromptTokens: cliKpi.totalPromptTokens,
         totalCompletionTokens: cliKpi.totalCompletionTokens,
+        avgTokensPerRequest: cliKpi.avgTokensPerRequest ?? 0,
       },
       cliUsersOverTime,
       dailyCliActivity,
