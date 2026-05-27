@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { factCopilotUsageDaily, rawCopilotUsage } from "@/lib/db/schema";
 import { sql, and, gte, lte, eq } from "drizzle-orm";
 import { daysAgo, isValidDate } from "@/lib/utils";
+import { getModelDisplayName } from "@/lib/utils/model-display-names";
 import { z } from "zod";
 import { safeErrorMessage } from "@/lib/auth";
 import { buildRawTeamAwareSql, buildTeamAwareCondition, resolveTeamAwareUserFilter } from "@/lib/db/team-filter";
@@ -206,7 +207,7 @@ export async function GET(request: NextRequest) {
     const modelAgentMap = new Map<string, { added: number; deleted: number }>();
 
     for (const r of byModelFeature) {
-      const model = String(r.model);
+      const model = getModelDisplayName(String(r.model));
       const isAgent = AGENT_FEATURES.includes(String(r.feature));
 
       if (!isAgent) {

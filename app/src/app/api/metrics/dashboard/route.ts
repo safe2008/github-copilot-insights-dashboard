@@ -13,6 +13,7 @@ import {
 } from "@/lib/db/schema";
 import { sql, and, gte, lte, eq } from "drizzle-orm";
 import { daysAgo, isValidDate } from "@/lib/utils";
+import { getModelDisplayName } from "@/lib/utils/model-display-names";
 import { z } from "zod";
 import { safeErrorMessage } from "@/lib/auth";
 import { buildTeamAwareCondition, resolveTeamAwareUserFilter } from "@/lib/db/team-filter";
@@ -356,7 +357,13 @@ export async function GET(request: NextRequest) {
     const totalCopilotUsers = totalUsersResult[0]?.totalUsers ?? 0;
 
     // Find most used chat model
-    const topModel = modelTotal.length > 0 ? String(modelTotal[0].name) : "N/A";
+    const topModel = modelTotal.length > 0 ? getModelDisplayName(String(modelTotal[0].name)) : "N/A";
+
+    // ── Apply model display names ──
+    const modelByDayDisplay = modelByDay.map((r) => ({ ...r, model: getModelDisplayName(String(r.model)) }));
+    const modelTotalDisplay = modelTotal.map((m) => ({ ...m, name: getModelDisplayName(String(m.name)) }));
+    const modelByFeatureDisplay = modelByFeature.map((r) => ({ ...r, model: getModelDisplayName(String(r.model)) }));
+    const langModelDisplay = langModelData.map((r) => ({ ...r, model: getModelDisplayName(String(r.model)) }));
 
     // ── Shape chat mode data into pivoted rows ──
     const CHAT_MODE_LABELS: Record<string, string> = {
@@ -375,16 +382,16 @@ export async function GET(request: NextRequest) {
     const chatModePivoted = pivotByDate(chatModeByDay, "feature", "value", formatFeature);
 
     // Pivot modelByDay
-    const modelByDayPivoted = pivotByDate(modelByDay, "model", "value");
+    const modelByDayPivoted = pivotByDate(modelByDayDisplay, "model", "value");
 
     // Pivot langByDay
     const langByDayPivoted = pivotByDate(langByDay, "language", "value");
 
     // Pivot model×feature: [{model, feature, value}] → [{model, Agent: n, ...}]
-    const modelByFeaturePivoted = pivotByKey(modelByFeature, "model", "feature", "value", formatFeature);
+    const modelByFeaturePivoted = pivotByKey(modelByFeatureDisplay, "model", "feature", "value", formatFeature);
 
-    // Pivot language×model: [{language, model, value}] → [{language, gpt-5.4: n, ...}]
-    const langModelPivoted = pivotByKey(langModelData, "language", "model", "value");
+    // Pivot language×model: [{language, model, value}] → [{language, GPT-5.4: n, ...}]
+    const langModelPivoted = pivotByKey(langModelDisplay, "language", "model", "value");
 
     return NextResponse.json({
       period: { start: startDate, end: endDate },
@@ -411,7 +418,7 @@ export async function GET(request: NextRequest) {
       requestsPerChatMode: chatModePivoted,
       codeCompletions: completionsByDay,
       modelUsagePerDay: modelByDayPivoted,
-      chatModelUsage: modelTotal.map((m) => ({ name: m.name, value: m.value })),
+      chatModelUsage: modelTotalDisplay.map((m) => ({ name: m.name, value: m.value })),
       modelUsagePerChatMode: modelByFeaturePivoted,
       languageUsagePerDay: langByDayPivoted,
       languageUsage: langTotal,

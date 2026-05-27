@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getGitHubConfig } from "@/lib/db/settings";
 import { resolveDisplayNames, formatUserLabel } from "@/lib/github/resolve-display-names";
+import { getModelDisplayName } from "@/lib/utils/model-display-names";
 import { safeErrorMessage } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -222,7 +223,7 @@ export async function GET(request: NextRequest) {
     }
 
     const filterOptions = {
-      models: Array.from(new Set(usageItems.map((i) => i.sku).filter((v): v is string => Boolean(v)))).sort((a, b) => a.localeCompare(b)),
+          models: Array.from(new Set(usageItems.map((i) => i.sku).filter((v): v is string => Boolean(v)))).map(getModelDisplayName).sort((a, b) => a.localeCompare(b)),
       orgs: Array.from(new Set(usageItems.map((i) => i.organizationName).filter((v): v is string => Boolean(v)))).sort((a, b) => a.localeCompare(b)),
       users: Array.from(new Set(usageItems.map((i) => i.user).filter((v): v is string => Boolean(v)))).sort((a, b) => a.localeCompare(b)),
       teams: Array.from(new Set(usageItems.map((i) => i.team).filter((v): v is string => Boolean(v)))).sort((a, b) => a.localeCompare(b)),
@@ -300,6 +301,7 @@ export async function GET(request: NextRequest) {
     const displayNameMap = await resolveDisplayNames(userLogins, token);
 
     const perModelBreakdown = Array.from(perModelMap.values())
+      .map((m) => ({ ...m, sku: getModelDisplayName(m.sku) }))
       .sort((a, b) => b.grossQuantity - a.grossQuantity);
     const perUserBreakdown = Array.from(perUserMap.values())
       .map((u) => ({

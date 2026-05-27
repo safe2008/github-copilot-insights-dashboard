@@ -9,6 +9,7 @@ import {
 } from "@/lib/db/schema";
 import { sql, and, gte, lte, eq, inArray, like } from "drizzle-orm";
 import { daysAgo, isValidDate } from "@/lib/utils";
+import { getModelDisplayName } from "@/lib/utils/model-display-names";
 import { z } from "zod";
 import { getGitHubConfig } from "@/lib/db/settings";
 import { resolveDisplayNames, formatUserLabel } from "@/lib/github/resolve-display-names";
@@ -308,7 +309,7 @@ export async function GET(request: NextRequest) {
       },
       agentUsersOverTime,
       agentModeByDay: agentModePivoted,
-      agentModelUsage: agentModelUsage as Array<{ name: string; value: number }>,
+      agentModelUsage: (agentModelUsage as Array<{ name: string; value: number }>).map((m) => ({ ...m, name: getModelDisplayName(m.name) })),
       agentVsNonAgentCodeGen,
       weeklyAdoptionRate,
       topAgentUsers: topAgentUsersWithNames,
