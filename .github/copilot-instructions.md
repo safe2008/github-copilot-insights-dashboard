@@ -109,7 +109,7 @@ Date format is always `YYYY-MM-DD`. Use `isValidDate()` from `@/lib/utils` for v
 
 - Drizzle ORM for all queries — no raw SQL strings
 - Schema defined in `app/src/lib/db/schema.ts`
-- Migrations generated with `npm run db:generate` → stored in `app/drizzle/`
+- Migrations generated with `pnpm run db:generate` → stored in `app/drizzle/`
 - Migrations run automatically on app startup via `instrumentation.ts`
 - Use `onConflictDoUpdate` for upserts in ETL
 
@@ -158,11 +158,11 @@ Dashboard pages follow a consistent pattern:
 
 ```bash
 cd app
-npm install              # Install dependencies
-npm run dev              # Development server (port 3000)
-npm run build            # Production build (validates types + lint)
-npm run db:generate      # Generate Drizzle migrations after schema changes
-npm run db:migrate       # Run pending migrations
+pnpm install              # Install dependencies
+pnpm run dev              # Development server (port 3000)
+pnpm run build            # Production build (validates types + lint)
+pnpm run db:generate      # Generate Drizzle migrations after schema changes
+pnpm run db:migrate       # Run pending migrations
 ```
 
 Deploy: `azd deploy` from repo root. Full provision: `azd up`.

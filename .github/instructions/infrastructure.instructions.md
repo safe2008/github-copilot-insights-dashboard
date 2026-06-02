@@ -24,4 +24,4 @@ Next.js standalone output requires explicit COPY for these directories in the ru
 
 - `azd up` for full provision + deploy
 - `azd deploy` for app-only deploy
-- Always run `cd app && npm run build` before deploying to catch errors early
+- Always run `cd app && pnpm run build` before deploying to catch errors early

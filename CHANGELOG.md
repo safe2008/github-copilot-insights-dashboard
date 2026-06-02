@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Package manager** — migrated from npm to pnpm; lockfile is now `app/pnpm-lock.yaml`, dependency overrides and build-script approvals live in `app/pnpm-workspace.yaml`, and the Docker build, CI workflows, and devcontainer use pnpm via Corepack
+
 ## [0.8.0] — 2026-04-12
 
 ### Added

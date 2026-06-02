@@ -15,7 +15,7 @@ applyTo: "app/src/lib/db/**/*.ts, app/src/lib/etl/**/*.ts"
 ## Schema Changes
 
 1. Edit `app/src/lib/db/schema.ts`
-2. Run `cd app && npm run db:generate`
+2. Run `cd app && pnpm run db:generate`
 3. Verify migration in `app/drizzle/`
 4. Migrations run automatically on startup — do not add manual steps
 

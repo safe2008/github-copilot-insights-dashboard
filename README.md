@@ -137,7 +137,7 @@ See [docs/architecture.md](docs/architecture.md) for detailed architecture docum
 
 ## Prerequisites
 
-- **Node.js** 24+ and npm
+- **Node.js** 24+ and **pnpm** (`corepack enable`)
 - **PostgreSQL** 18+ (local or cloud)
 - **GitHub Enterprise Cloud** with Copilot enabled
 - **GitHub Personal Access Token** with `manage_billing:copilot`, `read:enterprise`, `read:org` scopes
@@ -151,17 +151,17 @@ cd ghcp-dashboard
 
 # 2. Install dependencies
 cd app
-npm install
+pnpm install
 
 # 3. Configure environment
 cp .env.example .env
 # Edit .env with your database URL and admin password
 
 # 4. Run database migrations
-npx drizzle-kit migrate
+pnpm exec drizzle-kit migrate
 
 # 5. Start the development server
-npm run dev
+pnpm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) and navigate to **Settings** to configure your GitHub token and sync schedule.
@@ -237,14 +237,14 @@ ghcp-dashboard/
 ## Scripts
 
 ```bash
-npm run dev          # Start dev server
-npm run build        # Production build
-npm run start        # Start production server
-npm run lint         # ESLint check
-npm run db:generate  # Generate Drizzle migrations
-npm run db:migrate   # Run migrations
-npm run db:push      # Push schema to DB
-npm run ingest       # Manual data ingest
+pnpm run dev          # Start dev server
+pnpm run build        # Production build
+pnpm run start        # Start production server
+pnpm run lint         # ESLint check
+pnpm run db:generate  # Generate Drizzle migrations
+pnpm run db:migrate   # Run migrations
+pnpm run db:push      # Push schema to DB
+pnpm run ingest       # Manual data ingest
 ```
 
 ## Data Sync
