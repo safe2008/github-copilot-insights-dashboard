@@ -1,10 +1,12 @@
 FROM node:24-alpine AS deps
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts && npm cache clean --force
+RUN corepack enable
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile --ignore-scripts && pnpm store prune
 
 FROM node:24-alpine AS builder
 WORKDIR /app
+RUN corepack enable
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -12,7 +14,7 @@ ARG BUILD_ID=1
 ARG BUILD_TIME
 ENV NEXT_PUBLIC_BUILD_ID=$BUILD_ID
 ENV NEXT_PUBLIC_BUILD_TIME=$BUILD_TIME
-RUN npm run build
+RUN pnpm run build
 
 FROM node:24-alpine AS runner
 WORKDIR /app
