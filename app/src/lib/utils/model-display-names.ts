@@ -48,7 +48,9 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "claude-4.6-sonnet": "Claude Sonnet 4.6",
   "claude-sonnet-4.6": "Claude Sonnet 4.6",
   "claude-opus-4.6": "Claude Opus 4.6",
+  "claude-opus-4.6-fast": "Claude Opus 4.6 (Fast Mode)",
   "claude-opus-4.7": "Claude Opus 4.7",
+  "claude-opus-4.8": "Claude Opus 4.8",
 
   // ── Google Gemini family ──
   "gemini-2.0-flash": "Gemini 2.0 Flash",
@@ -57,6 +59,9 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "gemini-3-pro": "Gemini 3 Pro",
   "gemini-3.1-pro": "Gemini 3.1 Pro",
   "gemini-3.5-flash": "Gemini 3.5 Flash",
+
+  // ── Microsoft family ──
+  "mai-code-1-flash": "MAI-Code-1-Flash",
 
   // ── xAI Grok family (retired) ──
   "grok-code-fast-1": "Grok Code Fast 1",

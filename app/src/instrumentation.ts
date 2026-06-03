@@ -28,6 +28,8 @@ export async function register() {
       await sql`ALTER TABLE "ingestion_log" ADD COLUMN IF NOT EXISTS "source" varchar(20) DEFAULT 'api' NOT NULL`;
       await sql`ALTER TABLE "ingestion_log" ADD COLUMN IF NOT EXISTS "records_skipped" integer DEFAULT 0`;
       await sql`ALTER TABLE "raw_copilot_usage" ADD COLUMN IF NOT EXISTS "content_hash" varchar(64)`;
+      await sql`ALTER TABLE "raw_copilot_usage" ADD COLUMN IF NOT EXISTS "report_start_day" date`;
+      await sql`ALTER TABLE "raw_copilot_usage" ADD COLUMN IF NOT EXISTS "report_end_day" date`;
       console.info("Schema fixup: dim_model, ingestion_log & raw_copilot_usage columns verified");
     } catch (err) {
       console.error("Schema fixup failed:", err);

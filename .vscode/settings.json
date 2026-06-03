@@ -4,5 +4,8 @@
     {
       "file": ".github/commit-message-instructions.md"
     }
-  ]
+  ],
+  "chat.tools.terminal.autoApprove": {
+    "pnpm": true
+  }
 }

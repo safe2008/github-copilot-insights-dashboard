@@ -65,6 +65,20 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
+/**
+ * Build a diagnostic error message. Drizzle wraps the underlying driver error
+ * (e.g. a Postgres "column does not exist") under `.cause`, so the top-level
+ * message alone only shows the failed query. Surface the cause when present.
+ */
+function formatIngestError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause instanceof Error && cause.message && cause.message !== err.message) {
+    return `${err.message} — caused by: ${cause.message}`;
+  }
+  return err.message;
+}
+
 
 interface IngestOptions {
   enterpriseSlug: string;
@@ -920,7 +934,7 @@ export async function ingestCopilotUsage(opts: IngestOptions): Promise<{
       orgsDiscovered: orgs.length,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = formatIngestError(err);
     console.error(`Ingestion failed: ${message}`);
     log(`═══ ERROR ═══`);
     log(`${message}`);
@@ -1023,7 +1037,7 @@ export async function ingestFromFile(opts: FileIngestOptions): Promise<{
       recordsSkipped: skipped,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = formatIngestError(err);
     console.error(`File ingestion failed: ${message}`);
     log(`ERROR: ${message}`);
 

@@ -127,6 +127,13 @@
       "when": 1717347600000,
       "tag": "20260602170000_ai_credit_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "8",
+      "when": 1717405200000,
+      "tag": "20260603090000_raw_report_window",
+      "breakpoints": true
     }
   ]
 }
