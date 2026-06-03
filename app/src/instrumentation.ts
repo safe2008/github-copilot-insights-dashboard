@@ -28,8 +28,18 @@ export async function register() {
       await sql`ALTER TABLE "ingestion_log" ADD COLUMN IF NOT EXISTS "source" varchar(20) DEFAULT 'api' NOT NULL`;
       await sql`ALTER TABLE "ingestion_log" ADD COLUMN IF NOT EXISTS "records_skipped" integer DEFAULT 0`;
       await sql`ALTER TABLE "raw_copilot_usage" ADD COLUMN IF NOT EXISTS "content_hash" varchar(64)`;
+      await sql`ALTER TABLE "raw_copilot_usage" ADD COLUMN IF NOT EXISTS "source_team_github_id" integer`;
       await sql`ALTER TABLE "raw_copilot_usage" ADD COLUMN IF NOT EXISTS "report_start_day" date`;
       await sql`ALTER TABLE "raw_copilot_usage" ADD COLUMN IF NOT EXISTS "report_end_day" date`;
+      // Migration 20260526202342 adds source_team_github_id to the fact tables too;
+      // ensure they exist so the ETL fact-load phase doesn't fail on out-of-sync DBs.
+      await sql`ALTER TABLE "fact_copilot_usage_daily" ADD COLUMN IF NOT EXISTS "source_team_github_id" integer`;
+      await sql`ALTER TABLE "fact_cli_daily" ADD COLUMN IF NOT EXISTS "source_team_github_id" integer`;
+      await sql`ALTER TABLE "fact_user_feature_daily" ADD COLUMN IF NOT EXISTS "source_team_github_id" integer`;
+      await sql`ALTER TABLE "fact_user_ide_daily" ADD COLUMN IF NOT EXISTS "source_team_github_id" integer`;
+      await sql`ALTER TABLE "fact_user_language_daily" ADD COLUMN IF NOT EXISTS "source_team_github_id" integer`;
+      await sql`ALTER TABLE "fact_user_language_model_daily" ADD COLUMN IF NOT EXISTS "source_team_github_id" integer`;
+      await sql`ALTER TABLE "fact_user_model_daily" ADD COLUMN IF NOT EXISTS "source_team_github_id" integer`;
       console.info("Schema fixup: dim_model, ingestion_log & raw_copilot_usage columns verified");
     } catch (err) {
       console.error("Schema fixup failed:", err);
