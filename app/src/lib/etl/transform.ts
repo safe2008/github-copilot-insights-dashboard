@@ -5,7 +5,66 @@
  */
 
 import { createHash } from "crypto";
-import type { CopilotUsageRecord, CopilotAggregateRecord } from "@/types/copilot-api";
+import type {
+  CopilotUsageRecord,
+  CopilotAggregateRecord,
+  AiAdoptionPhaseField,
+} from "@/types/copilot-api";
+
+// ── AI Adoption Phase Extraction ──
+
+/** Map known string phase tokens to their canonical numeric value. */
+const AI_PHASE_TOKEN_MAP: Record<string, number> = {
+  no_cohort: 0,
+  none: 0,
+  code_first: 1,
+  agent_first: 2,
+  multi_agent: 3,
+};
+
+/**
+ * Normalize the polymorphic `ai_adoption_phase` field into a numeric phase
+ * (0–3) and an optional version string. Tolerates the documented object form
+ * (`{ phase, version }`), a bare number, or a string token so the report keeps
+ * working if the API serialization shifts.
+ */
+export function extractAiAdoptionPhase(
+  field: AiAdoptionPhaseField | undefined
+): { phase: number | null; version: string | null } {
+  if (field === null || field === undefined) return { phase: null, version: null };
+
+  let rawPhase: number | string | undefined;
+  let version: string | null = null;
+
+  if (typeof field === "object") {
+    rawPhase = field.phase;
+    version = field.version ?? null;
+  } else {
+    rawPhase = field;
+  }
+
+  let phase: number | null = null;
+  if (typeof rawPhase === "number" && Number.isFinite(rawPhase)) {
+    phase = Math.trunc(rawPhase);
+  } else if (typeof rawPhase === "string") {
+    const trimmed = rawPhase.trim().toLowerCase();
+    if (/^-?\d+$/.test(trimmed)) {
+      phase = parseInt(trimmed, 10);
+    } else if (trimmed in AI_PHASE_TOKEN_MAP) {
+      phase = AI_PHASE_TOKEN_MAP[trimmed];
+    } else {
+      // Handle labels like "phase 2" or "phase 2 — agent first".
+      const m = trimmed.match(/phase\s*(\d)/);
+      if (m) phase = parseInt(m[1], 10);
+    }
+  }
+
+  // Clamp to the documented range; anything outside is treated as unknown.
+  if (phase === null || phase < 0 || phase > 3) {
+    return { phase: null, version };
+  }
+  return { phase, version };
+}
 
 // ── Dimension Extraction ──
 
@@ -73,6 +132,7 @@ export interface FactUsageDailyRow {
   day: string;
   enterpriseId: number;
   organizationId: number | null;
+  sourceTeamGithubId: number | null;
   userId: number;
   userLogin: string;
   userInitiatedInteractionCount: number;
@@ -80,35 +140,61 @@ export interface FactUsageDailyRow {
   codeAcceptanceActivityCount: number;
   usedAgent: boolean;
   usedCopilotCodingAgent: boolean;
+  usedCopilotCloudAgent: boolean;
   usedChat: boolean;
   usedCli: boolean;
+  usedCodeReviewActive: boolean;
+  usedCodeReviewPassive: boolean;
+  locSuggestedToAddSum: number;
+  locSuggestedToDeleteSum: number;
+  locAddedSum: number;
+  locDeletedSum: number;
+  aiAdoptionPhase: number | null;
+  aiAdoptionPhaseVersion: string | null;
+}
+
+export interface FactFeatureRow {
+  day: string;
+  userId: number;
+  sourceTeamGithubId: number | null;
+  featureName: string;
+  userInitiatedInteractionCount: number;
+  codeGenerationActivityCount: number;
+  codeAcceptanceActivityCount: number;
   locSuggestedToAddSum: number;
   locSuggestedToDeleteSum: number;
   locAddedSum: number;
   locDeletedSum: number;
 }
 
-export interface FactFeatureRow {
-  day: string;
-  userId: number;
-  featureName: string;
-  userInitiatedInteractionCount: number;
-  codeGenerationActivityCount: number;
-  codeAcceptanceActivityCount: number;
-}
-
 export interface FactIdeRow {
   day: string;
   userId: number;
+  sourceTeamGithubId: number | null;
   ideName: string;
   userInitiatedInteractionCount: number;
   codeGenerationActivityCount: number;
   codeAcceptanceActivityCount: number;
+  locSuggestedToAddSum: number;
+  locSuggestedToDeleteSum: number;
+  locAddedSum: number;
+  locDeletedSum: number;
+}
+
+export interface FactIdeVersionRow {
+  day: string;
+  userId: number;
+  ideName: string;
+  ideVersion: string | null;
+  pluginName: string | null;
+  pluginVersion: string | null;
+  sampledAt: string | null;
 }
 
 export interface FactLanguageRow {
   day: string;
   userId: number;
+  sourceTeamGithubId: number | null;
   languageName: string;
   featureName: string;
   userInitiatedInteractionCount: number;
@@ -119,6 +205,7 @@ export interface FactLanguageRow {
 export interface FactModelRow {
   day: string;
   userId: number;
+  sourceTeamGithubId: number | null;
   modelName: string;
   featureName: string;
   userInitiatedInteractionCount: number;
@@ -129,6 +216,7 @@ export interface FactModelRow {
 export interface FactLanguageModelRow {
   day: string;
   userId: number;
+  sourceTeamGithubId: number | null;
   languageName: string;
   modelName: string;
   codeGenerationActivityCount: number;
@@ -138,6 +226,7 @@ export interface FactLanguageModelRow {
 export interface FactCliRow {
   day: string;
   userId: number;
+  sourceTeamGithubId: number | null;
   cliVersion: string;
   sessionCount: number;
   requestCount: number;
@@ -145,15 +234,18 @@ export interface FactCliRow {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  avgTokensPerRequest: string | null;
 }
 
 // ── Transform Functions ──
 
 export function transformToFactUsage(record: CopilotUsageRecord): FactUsageDailyRow {
+  const aiPhase = extractAiAdoptionPhase(record.ai_adoption_phase);
   return {
     day: record.day,
     enterpriseId: parseInt(String(record.enterprise_id), 10) || 0,
     organizationId: record.organization_id ? parseInt(String(record.organization_id), 10) || null : null,
+    sourceTeamGithubId: record._teamGithubId ?? null,
     userId: record.user_id,
     userLogin: record.user_login,
     userInitiatedInteractionCount: record.user_initiated_interaction_count ?? 0,
@@ -161,12 +253,17 @@ export function transformToFactUsage(record: CopilotUsageRecord): FactUsageDaily
     codeAcceptanceActivityCount: record.code_acceptance_activity_count ?? 0,
     usedAgent: record.used_agent ?? false,
     usedCopilotCodingAgent: record.used_copilot_coding_agent ?? false,
+    usedCopilotCloudAgent: record.used_copilot_cloud_agent ?? false,
     usedChat: record.used_chat ?? false,
     usedCli: record.used_cli ?? false,
+    usedCodeReviewActive: record.used_copilot_code_review_active ?? false,
+    usedCodeReviewPassive: record.used_copilot_code_review_passive ?? false,
     locSuggestedToAddSum: record.loc_suggested_to_add_sum ?? 0,
     locSuggestedToDeleteSum: record.loc_suggested_to_delete_sum ?? 0,
     locAddedSum: record.loc_added_sum ?? 0,
     locDeletedSum: record.loc_deleted_sum ?? 0,
+    aiAdoptionPhase: aiPhase.phase,
+    aiAdoptionPhaseVersion: aiPhase.version,
   };
 }
 
@@ -174,10 +271,15 @@ export function transformToFactFeatures(record: CopilotUsageRecord): FactFeature
   return (record.totals_by_feature ?? []).map((f) => ({
     day: record.day,
     userId: record.user_id,
+    sourceTeamGithubId: record._teamGithubId ?? null,
     featureName: f.feature,
     userInitiatedInteractionCount: f.user_initiated_interaction_count ?? 0,
     codeGenerationActivityCount: f.code_generation_activity_count ?? 0,
     codeAcceptanceActivityCount: f.code_acceptance_activity_count ?? 0,
+    locSuggestedToAddSum: f.loc_suggested_to_add_sum ?? 0,
+    locSuggestedToDeleteSum: f.loc_suggested_to_delete_sum ?? 0,
+    locAddedSum: f.loc_added_sum ?? 0,
+    locDeletedSum: f.loc_deleted_sum ?? 0,
   }));
 }
 
@@ -185,17 +287,37 @@ export function transformToFactIdes(record: CopilotUsageRecord): FactIdeRow[] {
   return (record.totals_by_ide ?? []).map((ide) => ({
     day: record.day,
     userId: record.user_id,
+    sourceTeamGithubId: record._teamGithubId ?? null,
     ideName: ide.ide,
     userInitiatedInteractionCount: ide.user_initiated_interaction_count ?? 0,
     codeGenerationActivityCount: ide.code_generation_activity_count ?? 0,
     codeAcceptanceActivityCount: ide.code_acceptance_activity_count ?? 0,
+    locSuggestedToAddSum: ide.loc_suggested_to_add_sum ?? 0,
+    locSuggestedToDeleteSum: ide.loc_suggested_to_delete_sum ?? 0,
+    locAddedSum: ide.loc_added_sum ?? 0,
+    locDeletedSum: ide.loc_deleted_sum ?? 0,
   }));
+}
+
+export function transformToFactIdeVersions(record: CopilotUsageRecord): FactIdeVersionRow[] {
+  return (record.totals_by_ide ?? [])
+    .filter((ide) => ide.last_known_ide_version || ide.last_known_plugin_version)
+    .map((ide) => ({
+      day: record.day,
+      userId: record.user_id,
+      ideName: ide.ide,
+      ideVersion: ide.last_known_ide_version?.ide_version ?? null,
+      pluginName: ide.last_known_plugin_version?.plugin ?? null,
+      pluginVersion: ide.last_known_plugin_version?.plugin_version ?? null,
+      sampledAt: ide.last_known_plugin_version?.sampled_at ?? ide.last_known_ide_version?.sampled_at ?? null,
+    }));
 }
 
 export function transformToFactLanguages(record: CopilotUsageRecord): FactLanguageRow[] {
   return (record.totals_by_language_feature ?? []).map((lf) => ({
     day: record.day,
     userId: record.user_id,
+    sourceTeamGithubId: record._teamGithubId ?? null,
     languageName: lf.language,
     featureName: lf.feature,
     userInitiatedInteractionCount: lf.user_initiated_interaction_count ?? 0,
@@ -208,6 +330,7 @@ export function transformToFactModels(record: CopilotUsageRecord): FactModelRow[
   return (record.totals_by_model_feature ?? []).map((mf) => ({
     day: record.day,
     userId: record.user_id,
+    sourceTeamGithubId: record._teamGithubId ?? null,
     modelName: mf.model,
     featureName: mf.feature,
     userInitiatedInteractionCount: mf.user_initiated_interaction_count ?? 0,
@@ -226,6 +349,7 @@ export function transformToFactCli(record: CopilotUsageRecord): FactCliRow[] {
   return [{
     day: record.day,
     userId: record.user_id,
+    sourceTeamGithubId: record._teamGithubId ?? null,
     cliVersion: cli.last_known_cli_version?.cli_version ?? "unknown",
     sessionCount: cli.session_count ?? 0,
     requestCount: cli.request_count ?? 0,
@@ -233,6 +357,9 @@ export function transformToFactCli(record: CopilotUsageRecord): FactCliRow[] {
     promptTokens,
     completionTokens: outputTokens,
     totalTokens: promptTokens + outputTokens,
+    avgTokensPerRequest: cli.token_usage?.avg_tokens_per_request != null
+      ? String(cli.token_usage.avg_tokens_per_request)
+      : null,
   }];
 }
 
@@ -240,6 +367,7 @@ export function transformToFactLanguageModels(record: CopilotUsageRecord): FactL
   return (record.totals_by_language_model ?? []).map((lm) => ({
     day: record.day,
     userId: record.user_id,
+    sourceTeamGithubId: record._teamGithubId ?? null,
     languageName: lm.language,
     modelName: lm.model,
     codeGenerationActivityCount: lm.code_generation_activity_count ?? 0,

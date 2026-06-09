@@ -9,7 +9,7 @@ services:
     docker:
       path: ./Dockerfile
       context: .
-      remoteBuild: true
+      remoteBuild: false
       buildArgs:
         - BUILD_ID=${BUILD_ID}
         - BUILD_TIME=${BUILD_TIME}

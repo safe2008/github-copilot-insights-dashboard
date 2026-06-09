@@ -6,13 +6,13 @@ Copilot Insights — enterprise analytics dashboard for GitHub Copilot usage dat
 
 ```bash
 cd app
-npm install              # Install dependencies
-npm run dev              # Development server (port 3000)
-npm run build            # Production build (validates types + lint)
-npm run test             # Run unit tests (vitest)
-npm run test:watch       # Run tests in watch mode
-npm run db:generate      # Generate Drizzle migrations after schema changes
-npm run db:migrate       # Run pending migrations
+pnpm install              # Install dependencies
+pnpm run dev              # Development server (port 3000)
+pnpm run build            # Production build (validates types + lint)
+pnpm run test             # Run unit tests (vitest)
+pnpm run test:watch       # Run tests in watch mode
+pnpm run db:generate      # Generate Drizzle migrations after schema changes
+pnpm run db:migrate       # Run pending migrations
 ```
 
 ## Deploy
@@ -28,10 +28,12 @@ azd up                   # Full provision + deploy (first time)
 app/                      # Next.js 16 application
   src/
     app/                  # Pages (App Router) + API routes (/api/*)
+      ai-adoption/        # AI adoption cohorts report
+      ai-credits/         # AI credits usage + billing report
       enterprise-teams/   # Enterprise Teams page
       settings/app-info/  # Application Info settings page
     components/           # Reusable React components
-      layout/             # Sidebar, breadcrumb, report filters
+      layout/             # Sidebar, breadcrumb, report filters, report banner
       ui/                 # DataTable, EmptyState, and shared UI
     lib/
       db/                 # Drizzle ORM: schema, connection, settings
@@ -100,7 +102,7 @@ console.error("Failed to fetch data:", error);
 - `dim_user` follows SCD Type 2 with `effective_from`, `effective_to`, `is_current`
 - `dim_enterprise_team` + `dim_enterprise_team_member` for enterprise team data
 - Schema defined in `app/src/lib/db/schema.ts`
-- After schema changes: run `cd app && npm run db:generate`, commit the migration file
+- After schema changes: run `cd app && pnpm run db:generate`, commit the migration file
 - Migrations run automatically on app startup via `instrumentation.ts`
 - Use `onConflictDoUpdate` for ETL upserts
 
@@ -108,6 +110,7 @@ console.error("Failed to fetch data:", error);
 
 - Server Components by default — add `"use client"` only when state/effects are needed
 - Dashboard pages: `ReportFilters` for date range + user + org + team filter, `DataTable` for tabular data
+- Report pages include a shared `ReportBanner` directly after `DataSourceBanner`
 - Charts: `react-chartjs-2` wrappers (`Line`, `Bar`, `Doughnut`)
 - Use `useChartOptions()` from `@/lib/theme/chart-theme` for theme-aware Chart.js options
 - Use `useTranslation()` from `@/lib/i18n/locale-provider` for i18n strings
@@ -158,7 +161,7 @@ Next.js standalone output mode — the Dockerfile runner stage must explicitly c
 
 ## Testing
 
-- Unit tests: `cd app && npm run test` (vitest)
-- Build validation: `cd app && npm run build` (validates TypeScript types + lint)
+- Unit tests: `cd app && pnpm run test` (vitest)
+- Build validation: `cd app && pnpm run build` (validates TypeScript types + lint)
 - Test files: `src/**/*.test.ts` and `src/**/*.test.tsx`
 - Tests cover: transform functions, NDJSON parsing, utility functions

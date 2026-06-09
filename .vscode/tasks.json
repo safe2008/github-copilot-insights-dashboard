@@ -1,0 +1,26 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "docker-compose: start db",
+      "type": "shell",
+      "command": "docker compose up -d db && echo 'Waiting for PostgreSQL...' && until docker compose exec db pg_isready -U postgres -d copilot_insights > /dev/null 2>&1; do sleep 1; done && echo 'PostgreSQL is ready'",
+      "isBackground": false,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "docker-compose: stop db",
+      "type": "shell",
+      "command": "docker compose down",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      }
+    }
+  ]
+}

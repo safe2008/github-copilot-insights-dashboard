@@ -10,8 +10,10 @@ import { useChartOptions } from "@/lib/theme/chart-theme";
 import { useTranslation } from "@/lib/i18n/locale-provider";
 import { ConfigurationBanner } from "@/components/layout/configuration-banner";
 import { PageHeader } from "@/components/layout/page-header";
+import { ReportBanner } from "@/components/layout/report-banner";
 import { DataSourceBanner } from "@/components/layout/report-filters";
-import { AlertTriangle, Settings, Lightbulb, Sparkles, Users, BookOpen, Bot, ExternalLink } from "lucide-react";
+import { AlertTriangle, Settings, Lightbulb, Sparkles, Users, BookOpen, ExternalLink } from "lucide-react";
+import { AgentIcon } from "@/components/icons/agent-icon";
 import Link from "next/link";
 
 
@@ -281,6 +283,7 @@ export default function BusinessValuePage() {
         actions={<PdfButton />}
       />
       <DataSourceBanner sourceLabel="GitHub Copilot Billing / Seats API" live />
+      <ReportBanner title={t("seats.aboutTitle")} body={t("seats.aboutBody")} />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
@@ -354,7 +357,7 @@ export default function BusinessValuePage() {
                   </span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <Bot className="mt-0.5 h-4 w-4 shrink-0 text-blue-500 dark:text-blue-400" />
+                  <AgentIcon className="mt-0.5 h-4 w-4 shrink-0 text-blue-500 dark:text-blue-400" />
                   <span>
                     {t("seats.enablementTip4")}
                     {" — "}
@@ -447,10 +450,10 @@ export default function BusinessValuePage() {
               { key: "assignmentCount", header: "Assignments", align: "right", render: (value: unknown) => (
                 <span className="text-xs text-gray-600 dark:text-gray-400">{String(value)}</span>
               ) },
-              { key: "daysInactive", header: "Days Inactive", align: "right", render: (value: unknown) => {
+              { key: "daysInactive", header: "Days Since Active", align: "right", render: (value: unknown) => {
                 const v = value as number | null;
-                if (v === null) return <span className="text-red-600 dark:text-red-400 font-medium">Never</span>;
-                return <span className={v > 60 ? "font-medium text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}>{v}</span>;
+                if (v === null) return <span className="text-gray-500 dark:text-gray-400 font-medium">Not yet active</span>;
+                return <span className={v > 60 ? "font-medium text-blue-600 dark:text-blue-400" : "text-amber-600 dark:text-amber-400"}>{v}</span>;
               } },
               { key: "lastActivityAt", header: "Last Activity", render: (value: unknown) => {
                 const v = value as string | null;

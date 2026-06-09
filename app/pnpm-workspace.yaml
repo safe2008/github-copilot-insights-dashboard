@@ -1,0 +1,14 @@
+overrides:
+  '@types/react': 19.2.15
+  '@types/react-dom': 19.2.3
+
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - unrs-resolver
+
+allowBuilds:
+  core-js: true
+  esbuild: true
+  sharp: true
+  unrs-resolver: true

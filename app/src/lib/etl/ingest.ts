@@ -16,6 +16,7 @@ import {
   factUserModelDaily,
   factCliDaily,
   factUserLanguageModelDaily,
+  factUserIdeVersionDaily,
   factOrgAggregateDaily,
   dimIde,
   dimFeature,
@@ -25,13 +26,20 @@ import {
   dimOrg,
   ingestionLog,
 } from "@/lib/db/schema";
-import { fetchCopilotUsage, fetchMultiOrgCopilotUsage } from "@/lib/github/copilot-api";
-import type { CopilotUsageRecord, CopilotAggregateRecord, EnterpriseOrg } from "@/types/copilot-api";
+import {
+  fetchCopilotUsage,
+  fetchMultiOrgCopilotUsage,
+  fetchEnterpriseAggregate,
+  fetchUserTeams,
+  buildUserTeamMap,
+} from "@/lib/github/copilot-api";
+import type { CopilotUsageRecord, CopilotAggregateRecord, EnterpriseOrg, UserTeamRecord } from "@/types/copilot-api";
 import type { SyncScope } from "@/lib/db/settings";
 import {
   transformToFactUsage,
   transformToFactFeatures,
   transformToFactIdes,
+  transformToFactIdeVersions,
   transformToFactLanguages,
   transformToFactModels,
   transformToFactCli,
@@ -55,6 +63,20 @@ function chunk<T>(arr: T[], size: number): T[][] {
     chunks.push(arr.slice(i, i + size));
   }
   return chunks;
+}
+
+/**
+ * Build a diagnostic error message. Drizzle wraps the underlying driver error
+ * (e.g. a Postgres "column does not exist") under `.cause`, so the top-level
+ * message alone only shows the failed query. Surface the cause when present.
+ */
+function formatIngestError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause instanceof Error && cause.message && cause.message !== err.message) {
+    return `${err.message} — caused by: ${cause.message}`;
+  }
+  return err.message;
 }
 
 
@@ -304,14 +326,20 @@ async function loadRecords(
         reportDate: record.day,
         enterpriseId: parseInt(String(record.enterprise_id), 10) || 0,
         userId: record.user_id,
+        sourceTeamGithubId: record._teamGithubId ?? null,
         rawJson: record,
         contentHash: hash,
+        reportStartDay: record.report_start_day ?? null,
+        reportEndDay: record.report_end_day ?? null,
       })
       .onConflictDoUpdate({
         target: [rawCopilotUsage.reportDate, rawCopilotUsage.enterpriseId, rawCopilotUsage.userId],
         set: {
+          sourceTeamGithubId: sql`EXCLUDED.source_team_github_id`,
           rawJson: sql`EXCLUDED.raw_json`,
           contentHash: sql`EXCLUDED.content_hash`,
+          reportStartDay: sql`EXCLUDED.report_start_day`,
+          reportEndDay: sql`EXCLUDED.report_end_day`,
           ingestedAt: sql`now()`,
         },
       });
@@ -350,18 +378,24 @@ async function loadRecords(
         enterpriseId: factRow.enterpriseId,
         userId: factRow.userId,
         userLogin: factRow.userLogin,
+        sourceTeamGithubId: factRow.sourceTeamGithubId,
         orgId: resolvedOrgId,
         userInitiatedInteractionCount: factRow.userInitiatedInteractionCount,
         codeGenerationActivityCount: factRow.codeGenerationActivityCount,
         codeAcceptanceActivityCount: factRow.codeAcceptanceActivityCount,
         usedAgent: factRow.usedAgent,
         usedCopilotCodingAgent: factRow.usedCopilotCodingAgent,
+        usedCopilotCloudAgent: factRow.usedCopilotCloudAgent,
         usedChat: factRow.usedChat,
         usedCli: factRow.usedCli,
+        usedCodeReviewActive: factRow.usedCodeReviewActive,
+        usedCodeReviewPassive: factRow.usedCodeReviewPassive,
         locSuggestedToAddSum: factRow.locSuggestedToAddSum,
         locSuggestedToDeleteSum: factRow.locSuggestedToDeleteSum,
         locAddedSum: factRow.locAddedSum,
         locDeletedSum: factRow.locDeletedSum,
+        aiAdoptionPhase: factRow.aiAdoptionPhase,
+        aiAdoptionPhaseVersion: factRow.aiAdoptionPhaseVersion,
       })
       .onConflictDoNothing();
 
@@ -375,10 +409,15 @@ async function loadRecords(
         .values({
           day: fr.day,
           userId: fr.userId,
+          sourceTeamGithubId: fr.sourceTeamGithubId,
           featureId: fId,
           userInitiatedInteractionCount: fr.userInitiatedInteractionCount,
           codeGenerationActivityCount: fr.codeGenerationActivityCount,
           codeAcceptanceActivityCount: fr.codeAcceptanceActivityCount,
+          locSuggestedToAddSum: fr.locSuggestedToAddSum,
+          locSuggestedToDeleteSum: fr.locSuggestedToDeleteSum,
+          locAddedSum: fr.locAddedSum,
+          locDeletedSum: fr.locDeletedSum,
         })
         .onConflictDoNothing();
     }
@@ -393,10 +432,34 @@ async function loadRecords(
         .values({
           day: ir.day,
           userId: ir.userId,
+          sourceTeamGithubId: ir.sourceTeamGithubId,
           ideId: iId,
           userInitiatedInteractionCount: ir.userInitiatedInteractionCount,
           codeGenerationActivityCount: ir.codeGenerationActivityCount,
           codeAcceptanceActivityCount: ir.codeAcceptanceActivityCount,
+          locSuggestedToAddSum: ir.locSuggestedToAddSum,
+          locSuggestedToDeleteSum: ir.locSuggestedToDeleteSum,
+          locAddedSum: ir.locAddedSum,
+          locDeletedSum: ir.locDeletedSum,
+        })
+        .onConflictDoNothing();
+    }
+
+    // IDE version tracking
+    const ideVersionRows = transformToFactIdeVersions(record);
+    for (const iv of ideVersionRows) {
+      const iId = ideMap.get(iv.ideName);
+      if (!iId) continue;
+      await db
+        .insert(factUserIdeVersionDaily)
+        .values({
+          day: iv.day,
+          userId: iv.userId,
+          ideId: iId,
+          ideVersion: iv.ideVersion,
+          pluginName: iv.pluginName,
+          pluginVersion: iv.pluginVersion,
+          sampledAt: iv.sampledAt ? new Date(iv.sampledAt) : null,
         })
         .onConflictDoNothing();
     }
@@ -412,6 +475,7 @@ async function loadRecords(
         .values({
           day: lr.day,
           userId: lr.userId,
+          sourceTeamGithubId: lr.sourceTeamGithubId,
           languageId: lId,
           featureId: fId,
           userInitiatedInteractionCount: lr.userInitiatedInteractionCount,
@@ -432,6 +496,7 @@ async function loadRecords(
         .values({
           day: mr.day,
           userId: mr.userId,
+          sourceTeamGithubId: mr.sourceTeamGithubId,
           modelId: mId,
           featureId: fId,
           userInitiatedInteractionCount: mr.userInitiatedInteractionCount,
@@ -449,6 +514,7 @@ async function loadRecords(
         .values({
           day: cr.day,
           userId: cr.userId,
+          sourceTeamGithubId: cr.sourceTeamGithubId,
           cliVersion: cr.cliVersion,
           sessionCount: cr.sessionCount,
           requestCount: cr.requestCount,
@@ -456,6 +522,7 @@ async function loadRecords(
           promptTokens: cr.promptTokens,
           completionTokens: cr.completionTokens,
           totalTokens: cr.totalTokens,
+          avgTokensPerRequest: cr.avgTokensPerRequest,
         })
         .onConflictDoNothing();
     }
@@ -471,6 +538,7 @@ async function loadRecords(
         .values({
           day: lmr.day,
           userId: lmr.userId,
+          sourceTeamGithubId: lmr.sourceTeamGithubId,
           languageId: lId,
           modelId: mId,
           codeGenerationActivityCount: lmr.codeGenerationActivityCount,
@@ -545,6 +613,76 @@ async function loadRecords(
 
   log(`All fact tables loaded — ${inserted} records processed, ${skipped} duplicates skipped, ${aggregateInserted} aggregates`);
   return { inserted, skipped, aggregateInserted };
+}
+
+/**
+ * Annotate per-user usage records with a representative GitHub team ID by
+ * joining the daily `user-teams` report(s) on `(user_id, day)`.
+ *
+ * Fetches the enterprise user-teams report (when the enterprise scope was used)
+ * and/or the per-org user-teams reports (when org scopes were used), merges the
+ * memberships, and writes `_teamGithubId` onto each matching record.
+ *
+ * Returns the number of records that were matched to a team.
+ */
+async function annotateRecordsWithTeams(opts: {
+  records: CopilotUsageRecord[];
+  day: string;
+  token: string;
+  enterpriseSlug: string;
+  useEnterpriseReport: boolean;
+  orgLogins: string[];
+  onLog: (msg: string) => void;
+  onApiRequest: (count: number) => void;
+}): Promise<number> {
+  const { records, day, token, enterpriseSlug, useEnterpriseReport, orgLogins, onLog, onApiRequest } = opts;
+
+  const allUserTeams: UserTeamRecord[] = [];
+
+  if (useEnterpriseReport) {
+    onLog(`Fetching enterprise user-teams report for ${day}…`);
+    const { records: utRecords, apiRequestCount } = await fetchUserTeams({
+      day,
+      token,
+      enterpriseSlug,
+    });
+    onApiRequest(apiRequestCount);
+    allUserTeams.push(...utRecords);
+    onLog(`Enterprise user-teams: ${utRecords.length} membership row(s)`);
+  }
+
+  for (const orgLogin of orgLogins) {
+    onLog(`Fetching user-teams report for org "${orgLogin}" (${day})…`);
+    const { records: utRecords, apiRequestCount } = await fetchUserTeams({
+      day,
+      token,
+      orgLogin,
+    });
+    onApiRequest(apiRequestCount);
+    allUserTeams.push(...utRecords);
+    onLog(`Org "${orgLogin}" user-teams: ${utRecords.length} membership row(s)`);
+  }
+
+  if (allUserTeams.length === 0) {
+    onLog(
+      "No user-teams memberships returned. Teams with fewer than 5 seated " +
+      "Copilot users are omitted from these reports."
+    );
+    return 0;
+  }
+
+  const userTeamMap = buildUserTeamMap(allUserTeams);
+
+  let matched = 0;
+  for (const record of records) {
+    const teamId = userTeamMap.get(`${record.user_id}|${record.day}`);
+    if (teamId !== undefined) {
+      record._teamGithubId = teamId;
+      matched++;
+    }
+  }
+
+  return matched;
 }
 
 /**
@@ -625,6 +763,21 @@ export async function ingestCopilotUsage(opts: IngestOptions): Promise<{
       records.push(...result.records);
       apiRequestCount += result.apiRequestCount;
       log(`Enterprise endpoint returned ${result.records.length} user records in ${result.apiRequestCount} API requests`);
+
+      // Fetch enterprise-level aggregates (active-user counts + PR metrics)
+      // directly, instead of reconstructing them by looping organizations.
+      try {
+        const aggResult = await fetchEnterpriseAggregate({
+          enterpriseSlug: opts.enterpriseSlug,
+          token: opts.token,
+          day: opts.day,
+        });
+        aggregateRecords.push(...aggResult.records);
+        apiRequestCount += aggResult.apiRequestCount;
+        log(`Enterprise aggregate endpoint returned ${aggResult.records.length} day record(s) in ${aggResult.apiRequestCount} API requests`);
+      } catch (err) {
+        log(`Enterprise aggregate fetch failed (continuing without enterprise aggregates): ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
 
     if (hasAllOrgs || hasOrganization) {
@@ -663,6 +816,38 @@ export async function ingestCopilotUsage(opts: IngestOptions): Promise<{
       orgs.push(...orgResult.orgs);
       apiRequestCount += orgResult.apiRequestCount;
       log(`Org fetch: ${orgResult.records.length} user records, ${orgResult.aggregateRecords.length} aggregates, ${orgResult.orgs.length} org(s), ${orgResult.apiRequestCount} API requests`);
+    }
+
+    // ── Team attribution (official user-teams join) ──
+    // Team membership is NOT part of the per-user usage report. The supported
+    // approach is to join the daily user-teams report on (user_id, day).
+    // This is daily-only: the join is skipped for 28-day reports to avoid
+    // mis-attributing a rolling window against a single-day membership snapshot.
+    if (records.length > 0) {
+      if (!opts.day) {
+        log(
+          "Skipping team attribution: user-teams reports are daily only and must " +
+          "not be joined with the 28-day usage report. Specify a day to enable team metrics."
+        );
+      } else {
+        try {
+          const matchedCount = await annotateRecordsWithTeams({
+            records,
+            day: opts.day,
+            token: opts.token,
+            enterpriseSlug: opts.enterpriseSlug,
+            useEnterpriseReport: hasEnterprise,
+            orgLogins: (hasAllOrgs || hasOrganization)
+              ? [...new Set(orgs.map((o) => o.login))]
+              : [],
+            onLog: log,
+            onApiRequest: (n) => { apiRequestCount += n; },
+          });
+          log(`Team attribution: matched ${matchedCount} user/day record(s) to a team`);
+        } catch (err) {
+          log(`Team attribution failed (continuing without team metrics): ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
     }
 
     const fetchDuration = ((Date.now() - fetchStartTime) / 1000).toFixed(1);
@@ -749,7 +934,7 @@ export async function ingestCopilotUsage(opts: IngestOptions): Promise<{
       orgsDiscovered: orgs.length,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = formatIngestError(err);
     console.error(`Ingestion failed: ${message}`);
     log(`═══ ERROR ═══`);
     log(`${message}`);
@@ -852,7 +1037,7 @@ export async function ingestFromFile(opts: FileIngestOptions): Promise<{
       recordsSkipped: skipped,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = formatIngestError(err);
     console.error(`File ingestion failed: ${message}`);
     log(`ERROR: ${message}`);
 

@@ -9,6 +9,7 @@ import { usePdfExport } from "@/components/ui/pdf-export";
 import { ReportFilters, DataSourceBanner } from "@/components/layout/report-filters";
 import type { FilterState, DataRange } from "@/components/layout/report-filters";
 import { PageHeader } from "@/components/layout/page-header";
+import { ReportBanner } from "@/components/layout/report-banner";
 import { useTranslation } from "@/lib/i18n/locale-provider";
 import { useChartOptions } from "@/lib/theme/chart-theme";
 import { ConfigurationBanner } from "@/components/layout/configuration-banner";
@@ -72,6 +73,7 @@ interface PRData {
 /* ── Helpers ── */
 
 const COLORS = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6"];
+const EMPTY_DAILY: DailyPR[] = [];
 
 function fmtDate(d: string) {
   return new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -117,25 +119,27 @@ export default function PullRequestsPage() {
   }, []);
 
   const totals = data?.totals;
-  const daily = data?.daily ?? [];
+  const daily = data?.daily ?? EMPTY_DAILY;
   const labels = [...new Set(daily.map((d) => d.day))].sort();
 
-  // Aggregate daily data (sum across orgs if multiple)
-  const aggByDay = new Map<string, { created: number; merged: number; copilotCreated: number; copilotMerged: number; ttm: number[]; ttmCopilot: number[]; reviewedByCopilot: number; copilotSuggestions: number; copilotApplied: number; reviewed: number }>();
-  for (const row of daily) {
-    const existing = aggByDay.get(row.day) ?? { created: 0, merged: 0, copilotCreated: 0, copilotMerged: 0, ttm: [], ttmCopilot: [], reviewedByCopilot: 0, copilotSuggestions: 0, copilotApplied: 0, reviewed: 0 };
-    existing.created += row.prTotalCreated ?? 0;
-    existing.merged += row.prTotalMerged ?? 0;
-    existing.copilotCreated += row.prTotalCreatedByCopilot ?? 0;
-    existing.copilotMerged += row.prTotalMergedCreatedByCopilot ?? 0;
-    existing.reviewedByCopilot += row.prTotalReviewedByCopilot ?? 0;
-    existing.copilotSuggestions += row.prTotalCopilotSuggestions ?? 0;
-    existing.copilotApplied += row.prTotalCopilotAppliedSuggestions ?? 0;
-    existing.reviewed += row.prTotalReviewed ?? 0;
-    if (row.prMedianMinutesToMerge) existing.ttm.push(parseFloat(row.prMedianMinutesToMerge));
-    if (row.prMedianMinutesToMergeCopilotAuthored) existing.ttmCopilot.push(parseFloat(row.prMedianMinutesToMergeCopilotAuthored));
-    aggByDay.set(row.day, existing);
-  }
+  const aggByDay = useMemo(() => {
+    const map = new Map<string, { created: number; merged: number; copilotCreated: number; copilotMerged: number; ttm: number[]; ttmCopilot: number[]; reviewedByCopilot: number; copilotSuggestions: number; copilotApplied: number; reviewed: number }>();
+    for (const row of daily) {
+      const existing = map.get(row.day) ?? { created: 0, merged: 0, copilotCreated: 0, copilotMerged: 0, ttm: [], ttmCopilot: [], reviewedByCopilot: 0, copilotSuggestions: 0, copilotApplied: 0, reviewed: 0 };
+      existing.created += row.prTotalCreated ?? 0;
+      existing.merged += row.prTotalMerged ?? 0;
+      existing.copilotCreated += row.prTotalCreatedByCopilot ?? 0;
+      existing.copilotMerged += row.prTotalMergedCreatedByCopilot ?? 0;
+      existing.reviewedByCopilot += row.prTotalReviewedByCopilot ?? 0;
+      existing.copilotSuggestions += row.prTotalCopilotSuggestions ?? 0;
+      existing.copilotApplied += row.prTotalCopilotAppliedSuggestions ?? 0;
+      existing.reviewed += row.prTotalReviewed ?? 0;
+      if (row.prMedianMinutesToMerge) existing.ttm.push(parseFloat(row.prMedianMinutesToMerge));
+      if (row.prMedianMinutesToMergeCopilotAuthored) existing.ttmCopilot.push(parseFloat(row.prMedianMinutesToMergeCopilotAuthored));
+      map.set(row.day, existing);
+    }
+    return map;
+  }, [daily]);
 
   const copilotSuggestionApplyRate = totals?.totalCopilotSuggestions
     ? Math.round((totals.totalCopilotAppliedSuggestions / totals.totalCopilotSuggestions) * 1000) / 10
@@ -227,8 +231,9 @@ export default function PullRequestsPage() {
         subtitle={t("pullRequests.subtitle")}
         actions={<PdfButton />}
       />
-      <ReportFilters onApply={fetchData} onDataRange={setDataRange} showUserFilter={false} sourceLabel="Organization Aggregate" />
+      <ReportFilters onApply={fetchData} onDataRange={setDataRange} showUserFilter={false} teamFilterEnabled={false} sourceLabel="Organization Aggregate" />
       <DataSourceBanner sourceLabel="Organization aggregate data (includes pull request metrics)" />
+      <ReportBanner title={t("pullRequests.aboutTitle")} body={t("pullRequests.aboutBody")} />
 
       {loading ? (
         <LoadingSpinner message={t("pullRequests.loadingPR")} />

@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { dimUser, dimOrg, dimEnterpriseTeam, dimEnterpriseTeamMember } from "@/lib/db/schema";
+import {
+  dimUser,
+  dimOrg,
+  dimEnterpriseTeam,
+  dimEnterpriseTeamMember,
+  factCopilotUsageDaily,
+} from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { getGitHubConfig } from "@/lib/db/settings";
 import { resolveDisplayNames, formatUserLabel } from "@/lib/github/resolve-display-names";
@@ -45,12 +51,17 @@ export async function GET() {
           teamId: dimEnterpriseTeam.teamId,
           teamName: dimEnterpriseTeam.teamName,
           teamSlug: dimEnterpriseTeam.teamSlug,
-          memberCount: sql<number>`count(${dimEnterpriseTeamMember.id})`.as("member_count"),
+          memberCount: sql<number>`count(distinct ${dimEnterpriseTeamMember.id})`.as("member_count"),
+          nativeRows: sql<number>`count(distinct ${factCopilotUsageDaily.id})`.as("native_rows"),
         })
         .from(dimEnterpriseTeam)
         .leftJoin(
           dimEnterpriseTeamMember,
           eq(dimEnterpriseTeam.teamId, dimEnterpriseTeamMember.teamId),
+        )
+        .leftJoin(
+          factCopilotUsageDaily,
+          eq(dimEnterpriseTeam.githubTeamId, factCopilotUsageDaily.sourceTeamGithubId),
         )
         .groupBy(
           dimEnterpriseTeam.teamId,
@@ -80,6 +91,8 @@ export async function GET() {
         name: t.teamName,
         slug: t.teamSlug,
         memberCount: Number(t.memberCount),
+        hasNativeApiData: Number(t.nativeRows) > 0,
+        filterStrategy: Number(t.nativeRows) > 0 ? "native" : "members",
       })),
     });
   } catch (err) {

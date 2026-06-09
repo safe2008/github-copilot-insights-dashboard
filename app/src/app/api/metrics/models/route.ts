@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { dimModel, factUserModelDaily, dimFeature } from "@/lib/db/schema";
 import { sql, and, gte, lte, eq, desc } from "drizzle-orm";
 import { daysAgo } from "@/lib/utils";
+import { getModelDisplayName } from "@/lib/utils/model-display-names";
 import { safeErrorMessage } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
     const models = allModels.map((m) => {
       const stats = statsMap.get(m.modelId);
       return {
-        modelName: m.modelName,
+        modelName: getModelDisplayName(m.modelName),
         isPremium: m.isPremium,
         isEnabled: m.isEnabled ?? true,
         tier: m.isPremium ? "premium" : "included",

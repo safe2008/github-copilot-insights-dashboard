@@ -5,16 +5,16 @@ Thank you for your interest in contributing! Here's how to get started.
 ## Development Setup
 
 1. Fork and clone the repository
-2. Install dependencies: `cd app && npm install`
+2. Install dependencies: `cd app && pnpm install`
 3. Copy `app/.env.example` to `app/.env` and configure
-4. Start PostgreSQL and run migrations: `npx drizzle-kit migrate`
-5. Start the dev server: `npm run dev`
+4. Start PostgreSQL and run migrations: `pnpm exec drizzle-kit migrate`
+5. Start the dev server: `pnpm run dev`
 
 ## Pull Request Process
 
 1. Create a feature branch from `main`
 2. Make your changes with clear, descriptive commits
-3. Ensure the build passes: `npm run build`
+3. Ensure the build passes: `pnpm run build`
 4. Update documentation if adding new features or pages
 5. Open a pull request with a description of what changed and why
 
@@ -29,7 +29,7 @@ Thank you for your interest in contributing! Here's how to get started.
 ## Database Changes
 
 - Use Drizzle ORM schema definitions in `app/src/lib/db/schema.ts`
-- Generate migrations: `npm run db:generate`
+- Generate migrations: `pnpm run db:generate`
 - Never edit migration files directly after they've been committed
 
 ## Adding a New Dashboard Page

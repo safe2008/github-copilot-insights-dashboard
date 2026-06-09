@@ -86,6 +86,7 @@ import { useTranslation } from "@/lib/i18n/locale-provider";
 import { ReportFilters, DataSourceBanner, formatDateRangeLabel, type FilterState, type DataRange } from "@/components/layout/report-filters";
 import { ConfigurationBanner } from "@/components/layout/configuration-banner";
 import { PageHeader } from "@/components/layout/page-header";
+import { ReportBanner } from "@/components/layout/report-banner";
 import { EmptyState } from "@/components/ui/empty-state";
 
 /* ── Component ── */
@@ -108,6 +109,7 @@ export default function AgentsPage() {
       if (filters.endDate) params.set("end", filters.endDate);
       if (filters.userId) params.set("userId", filters.userId);
       if (filters.orgId) params.set("orgId", filters.orgId);
+      if (filters.teamId) params.set("teamId", filters.teamId);
       const res = await fetch(`/api/metrics/agents?${params}`);
       if (res.ok) setData(await res.json());
     } catch (err) {
@@ -258,6 +260,7 @@ export default function AgentsPage() {
       />
       <ReportFilters onApply={fetchData} onDataRange={setDataRange} />
       <DataSourceBanner />
+      <ReportBanner title={t("agents.aboutTitle")} body={t("agents.aboutBody")} />
 
       {loading && !data ? (
         <LoadingSpinner message={t("agents.loadingAgent")} />

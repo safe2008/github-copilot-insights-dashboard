@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { factCopilotUsageDaily, rawCopilotUsage, dimUser } from "@/lib/db/schema";
-import { sql, and, gte, lte, eq, inArray } from "drizzle-orm";
+import { factCopilotUsageDaily, rawCopilotUsage } from "@/lib/db/schema";
+import { sql, and, gte, lte, eq } from "drizzle-orm";
 import { daysAgo, isValidDate } from "@/lib/utils";
+import { getModelDisplayName } from "@/lib/utils/model-display-names";
 import { z } from "zod";
 import { safeErrorMessage } from "@/lib/auth";
+import { buildRawTeamAwareSql, buildTeamAwareCondition, resolveTeamAwareUserFilter } from "@/lib/db/team-filter";
 
 const querySchema = z.object({
   days: z.coerce.number().int().positive().max(365).optional(),
@@ -12,6 +14,8 @@ const querySchema = z.object({
   end: z.string().refine(isValidDate).optional(),
   userId: z.coerce.number().int().optional(),
   orgId: z.string().optional(),
+  teamId: z.string().optional(),
+  teamName: z.string().optional(),
 });
 
 /** Agent-initiated feature names */
@@ -47,28 +51,15 @@ export async function GET(request: NextRequest) {
       end: sp.get("end") ?? undefined,
       userId: sp.get("userId") ?? undefined,
       orgId: sp.get("orgId") ?? undefined,
+      teamId: sp.get("teamId") ?? undefined,
+      teamName: sp.get("teamName") ?? undefined,
     });
 
     const endDate = params.end ?? new Date().toISOString().split("T")[0];
     const startDate = params.start ?? daysAgo(params.days ?? 28);
 
-    // Resolve user filter (user, org)
-    let userIds: number[] | null = null;
-    if (params.userId) {
-      userIds = [params.userId];
-    } else if (params.orgId) {
-      const orgIds = params.orgId.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
-      if (orgIds.length > 0) {
-        const conditions = [eq(dimUser.isCurrent, true)];
-        if (orgIds.length === 1) conditions.push(eq(dimUser.orgId, orgIds[0]));
-        else conditions.push(inArray(dimUser.orgId, orgIds));
-        const orgUsers = await db
-          .select({ userId: dimUser.userId })
-          .from(dimUser)
-          .where(and(...conditions));
-        userIds = orgUsers.map((u) => u.userId);
-      }
-    }
+    const { userIds, teamFilterApplied, selectedGithubTeamIds } =
+      await resolveTeamAwareUserFilter(params);
 
     // WHERE helpers
     const factWhere = () => {
@@ -76,11 +67,18 @@ export async function GET(request: NextRequest) {
         gte(factCopilotUsageDaily.day, startDate),
         lte(factCopilotUsageDaily.day, endDate),
       ];
-      if (userIds) conds.push(inArray(factCopilotUsageDaily.userId, userIds));
+      const teamAware = buildTeamAwareCondition(
+        factCopilotUsageDaily.userId,
+        userIds,
+        teamFilterApplied,
+        selectedGithubTeamIds,
+        factCopilotUsageDaily.sourceTeamGithubId,
+      );
+      if (teamAware) conds.push(teamAware);
       return and(...conds);
     };
 
-    const userFilter = userIds ? sql`AND r.user_id = ANY(ARRAY[${sql.join(userIds.map((id) => sql`${id}`), sql`, `)}])` : sql``;
+    const userFilter = buildRawTeamAwareSql(userIds, teamFilterApplied, selectedGithubTeamIds);
 
     const [
       dailyTotals,
@@ -209,7 +207,7 @@ export async function GET(request: NextRequest) {
     const modelAgentMap = new Map<string, { added: number; deleted: number }>();
 
     for (const r of byModelFeature) {
-      const model = String(r.model);
+      const model = getModelDisplayName(String(r.model));
       const isAgent = AGENT_FEATURES.includes(String(r.feature));
 
       if (!isAgent) {

@@ -1,3 +1,11 @@
 {
-    "python.terminal.useEnvFile": true
+    "python.terminal.useEnvFile": true,
+    "github.copilot.chat.commitMessageGeneration.instructions": [
+    {
+      "file": ".github/commit-message-instructions.md"
+    }
+  ],
+  "chat.tools.terminal.autoApprove": {
+    "pnpm": true
+  }
 }

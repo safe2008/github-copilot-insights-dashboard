@@ -1,0 +1,1 @@
+ALTER TABLE "ingestion_log" ADD COLUMN IF NOT EXISTS "log_messages" text;

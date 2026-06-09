@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
+corepack enable
 cd app
-npm install
-npx drizzle-kit migrate
+corepack prepare --activate
+pnpm install
+pnpm exec drizzle-kit migrate

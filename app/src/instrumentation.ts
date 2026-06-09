@@ -1,38 +1,19 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { drizzle } = await import("drizzle-orm/postgres-js");
-    const { migrate } = await import("drizzle-orm/postgres-js/migrator");
-    const postgres = (await import("postgres")).default;
-
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) {
       console.warn("DATABASE_URL not set — skipping database migrations");
       return;
     }
 
-    const sql = postgres(connectionString, { max: 1 });
-    const db = drizzle({ client: sql });
-
-    try {
-      await migrate(db, { migrationsFolder: "./drizzle" });
-      console.info("Database migrations completed successfully");
-    } catch (err) {
-      console.error("Database migration failed:", err);
-    }
-
-    // Fixup: ensure columns from migration 0002 exist (may have been
-    // recorded as applied before the ALTER TABLE statements succeeded).
-    try {
-      await sql`ALTER TABLE "dim_model" ADD COLUMN IF NOT EXISTS "is_premium" boolean DEFAULT false NOT NULL`;
-      await sql`ALTER TABLE "dim_model" ADD COLUMN IF NOT EXISTS "is_enabled" boolean`;
-      await sql`ALTER TABLE "ingestion_log" ADD COLUMN IF NOT EXISTS "source" varchar(20) DEFAULT 'api' NOT NULL`;
-      await sql`ALTER TABLE "ingestion_log" ADD COLUMN IF NOT EXISTS "records_skipped" integer DEFAULT 0`;
-      await sql`ALTER TABLE "raw_copilot_usage" ADD COLUMN IF NOT EXISTS "content_hash" varchar(64)`;
-      console.info("Schema fixup: dim_model, ingestion_log & raw_copilot_usage columns verified");
-    } catch (err) {
-      console.error("Schema fixup failed:", err);
-    } finally {
-      await sql.end();
+    const { runMigrations } = await import("@/lib/db/migrate");
+    const result = await runMigrations();
+    for (const line of result.logs) {
+      if (result.migrationError || result.fixupError) {
+        console.warn(line);
+      } else {
+        console.info(line);
+      }
     }
 
     // Initialize ETL sync scheduler using saved settings
