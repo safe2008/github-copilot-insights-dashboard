@@ -2,6 +2,9 @@ FROM node:24-alpine AS deps
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# Harden registry fetch against slow/flaky links (notably under cross-arch emulation).
+# A project .npmrc is the authoritative way to set these for pnpm.
+RUN printf 'fetch-timeout=600000\nfetch-retries=5\nfetch-retry-maxtimeout=120000\nnetwork-concurrency=4\n' > .npmrc
 RUN pnpm install --frozen-lockfile --ignore-scripts && pnpm store prune
 
 FROM node:24-alpine AS builder
