@@ -1608,8 +1608,7 @@ export default function MetricsInfoPage() {
                 { ep: "GET /api/health", desc: "Database connectivity and latency health check", params: "—" },
                 { ep: "GET /api/settings/app-info", desc: "Non-sensitive application configuration and environment info", params: "—" },
                 { ep: "GET /api/audit-log", desc: "Administrative action history for settings and system operations", params: "limit, offset" },
-                { ep: "POST /api/auth/verify-admin", desc: "Verify admin password for settings access", params: "JSON body" },
-                { ep: "GET /api/auth/verify-dashboard", desc: "Verify dashboard access state for authenticated sessions", params: "—" },
+                { ep: "GET/POST /api/auth/[...nextauth]", desc: "Auth.js + Keycloak OIDC: sign-in, callback, session, sign-out", params: "—" },
                 { ep: "POST /api/admin/reset", desc: "Reset database (truncate all data tables)", params: "—" },
               ].map((r) => (
                 <tr key={r.ep} className="border-b border-gray-100 dark:border-gray-700">

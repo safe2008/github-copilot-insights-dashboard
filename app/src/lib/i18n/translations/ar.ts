@@ -1,6 +1,14 @@
 import type { TranslationKeys } from "./en";
 
 export const ar: TranslationKeys = {
+  auth: {
+    signInTitle: "تسجيل الدخول إلى Copilot Insights",
+    signInSubtitle: "استخدم حساب مؤسستك للمتابعة",
+    signInButton: "تسجيل الدخول عبر Keycloak",
+    signingIn: "جارٍ إعادة التوجيه…",
+    accessDenied: "ليس لحسابك صلاحية الوصول إلى لوحة المعلومات هذه. تواصل مع المسؤول.",
+    signedInAs: "تم تسجيل الدخول باسم",
+  },
   common: {
     apply: "تطبيق",
     save: "حفظ",

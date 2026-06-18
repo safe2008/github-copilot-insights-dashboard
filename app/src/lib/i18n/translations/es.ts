@@ -1,6 +1,14 @@
 import type { TranslationKeys } from "./en";
 
 export const es: TranslationKeys = {
+  auth: {
+    signInTitle: "Inicia sesión en Copilot Insights",
+    signInSubtitle: "Usa tu cuenta de organización para continuar",
+    signInButton: "Iniciar sesión con Keycloak",
+    signingIn: "Redirigiendo…",
+    accessDenied: "Tu cuenta no tiene acceso a este panel. Contacta con tu administrador.",
+    signedInAs: "Sesión iniciada como",
+  },
   common: {
     apply: "Aplicar",
     save: "Guardar",

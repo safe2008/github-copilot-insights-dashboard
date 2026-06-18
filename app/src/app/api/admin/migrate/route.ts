@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logAudit, getClientIp } from "@/lib/audit";
-import { requireAdminAuth, safeErrorMessage } from "@/lib/auth";
+import { safeErrorMessage } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth-guards";
 import { runMigrations, listMigrationStatus } from "@/lib/db/migrate";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
  * summary. Admin-gated, read-only.
  */
 export async function GET(request: NextRequest) {
-  const authError = requireAdminAuth(request);
+  const authError = await requireAdmin();
   if (authError) return authError;
 
   try {
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
  * Admin-gated. Safe to run repeatedly — every statement uses IF NOT EXISTS.
  */
 export async function POST(request: NextRequest) {
-  const authError = requireAdminAuth(request);
+  const authError = await requireAdmin();
   if (authError) return authError;
 
   try {

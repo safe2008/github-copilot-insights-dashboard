@@ -155,7 +155,7 @@ Next.js standalone output mode — the Dockerfile runner stage must explicitly c
 - All secrets in Azure Key Vault — never in env vars, parameters, or code
 - Validate all user input with Zod at API boundaries
 - No raw SQL — Drizzle ORM parameterized queries only
-- Admin password gate on Settings page
+- User auth via Keycloak OIDC (Auth.js v5, `app/src/auth.ts`); realm roles `insights-admin`/`insights-viewer` map to access tiers, enforced centrally in `app/src/proxy.ts`. Env: `AUTH_SECRET`, `AUTH_URL`, `AUTH_KEYCLOAK_ID`, `AUTH_KEYCLOAK_SECRET`, `AUTH_KEYCLOAK_ISSUER`
 - Managed Identity for Azure resource access
 - Required PAT scopes: `manage_billing:copilot (read)`, `read:org`, `read:enterprise`, `manage_billing:enterprise (read)`
 

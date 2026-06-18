@@ -1,4 +1,12 @@
 export const en = {
+  auth: {
+    signInTitle: "Sign in to Copilot Insights",
+    signInSubtitle: "Use your organization account to continue",
+    signInButton: "Sign in with Keycloak",
+    signingIn: "Redirecting…",
+    accessDenied: "Your account doesn't have access to this dashboard. Contact your administrator.",
+    signedInAs: "Signed in as",
+  },
   common: {
     apply: "Apply",
     save: "Save",

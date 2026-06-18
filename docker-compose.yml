@@ -8,10 +8,39 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/copilot_insights
       NEXT_TELEMETRY_DISABLED: "1"
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # Auth.js + Keycloak. Override AUTH_KEYCLOAK_ISSUER to point at an
+      # external Keycloak in production. AUTH_URL is the app's public origin.
+      AUTH_SECRET: ${AUTH_SECRET:-dev-only-insecure-secret-change-me}
+      AUTH_URL: http://localhost:3000
+      AUTH_TRUST_HOST: "true"
+      AUTH_KEYCLOAK_ID: ${AUTH_KEYCLOAK_ID:-copilot-insights-dashboard}
+      AUTH_KEYCLOAK_SECRET: ${AUTH_KEYCLOAK_SECRET:-dev-only-change-me}
+      AUTH_KEYCLOAK_ISSUER: ${AUTH_KEYCLOAK_ISSUER:-http://keycloak:8080/realms/copilot-insights}
     depends_on:
       db:
         condition: service_healthy
+      keycloak:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - appnet
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Frontchannel + backchannel share the `keycloak` hostname so the token
+      # `iss` matches AUTH_KEYCLOAK_ISSUER for both the browser and the app
+      # container. Browser access needs `127.0.0.1 keycloak` in /etc/hosts.
+      KC_HOSTNAME: http://keycloak:8080
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     restart: unless-stopped
     networks:
       - appnet

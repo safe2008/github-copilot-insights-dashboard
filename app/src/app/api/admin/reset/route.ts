@@ -4,7 +4,8 @@ import { sql, is, getTableName } from "drizzle-orm";
 import { PgTable } from "drizzle-orm/pg-core";
 import * as schema from "@/lib/db/schema";
 import { logAudit, getClientIp } from "@/lib/audit";
-import { requireAdminAuth, safeErrorMessage } from "@/lib/auth";
+import { safeErrorMessage } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth-guards";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,7 @@ function isSafeIdentifier(name: string): boolean {
 const RESET_CONFIRMATION = "RESET";
 
 export async function POST(request: NextRequest) {
-  const authError = requireAdminAuth(request);
+  const authError = await requireAdmin();
   if (authError) return authError;
 
   // Require an explicit confirmation token in the body so a stray POST (or a

@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { signOut, useSession } from "next-auth/react";
 import { useTheme } from "@/lib/theme/theme-provider";
 import { useTranslation } from "@/lib/i18n/locale-provider";
 import {
@@ -51,6 +52,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const { t, locale, setLocale, locales } = useTranslation();
+  const { data: session } = useSession();
 
   const cycleTheme = () => {
     const order: Array<"system" | "light" | "dark"> = ["system", "light", "dark"];
@@ -105,12 +107,19 @@ export function Sidebar() {
           <Settings className="h-4 w-4" />
           {t("common.settings")}
         </Link>
+        {session?.user && (
+          <div className="px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400">
+            <div className="truncate font-medium text-gray-700 dark:text-gray-300">
+              {session.user.name ?? session.user.email}
+            </div>
+            <div className="truncate">
+              {t("auth.signedInAs")} · {session.tier}
+            </div>
+          </div>
+        )}
         <button
           type="button"
-          onClick={() => {
-            sessionStorage.removeItem("dashboard_authenticated");
-            window.location.reload();
-          }}
+          onClick={() => void signOut({ callbackUrl: "/signin" })}
           className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
         >
           <LogOut className="h-4 w-4" />
