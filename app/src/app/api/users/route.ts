@@ -65,6 +65,7 @@ export async function GET(request: NextRequest) {
         lastActiveDate: sql<string>`MAX(${factCopilotUsageDaily.day})`,
         locAdded: sql<number>`COALESCE(SUM(${factCopilotUsageDaily.locAddedSum}), 0)`,
         locDeleted: sql<number>`COALESCE(SUM(${factCopilotUsageDaily.locDeletedSum}), 0)`,
+        aiCreditsUsed: sql<number>`COALESCE(SUM(${factCopilotUsageDaily.aiCreditsUsed}), 0)::float8`,
       })
       .from(factCopilotUsageDaily)
       .where(and(...conditions))
@@ -121,6 +122,7 @@ export async function GET(request: NextRequest) {
       lastActiveDate: u.lastActiveDate,
       locAdded: u.locAdded,
       locDeleted: u.locDeleted,
+      aiCreditsUsed: Math.round(Number(u.aiCreditsUsed) * 100) / 100,
     }));
 
     return NextResponse.json({

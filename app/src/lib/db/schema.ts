@@ -174,6 +174,9 @@ export const factCopilotUsageDaily = pgTable(
     locSuggestedToDeleteSum: integer("loc_suggested_to_delete_sum").default(0).notNull(),
     locAddedSum: integer("loc_added_sum").default(0).notNull(),
     locDeletedSum: integer("loc_deleted_sum").default(0).notNull(),
+    // AI credits consumed by the user over the report window (Copilot Usage
+    // Metrics API, 2026-06-19). A consumption signal, not a billed total.
+    aiCreditsUsed: numeric("ai_credits_used").default("0").notNull(),
     // AI adoption phase (cohorts, Copilot Usage Metrics API 2026-05-29).
     // 0 = no cohort, 1 = code-first, 2 = agent-first, 3 = multi-agent.
     aiAdoptionPhase: smallint("ai_adoption_phase"),
@@ -443,6 +446,29 @@ export const alertRules = pgTable("alert_rules", {
   createdBy: varchar("created_by", { length: 255 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// AI Analyst — cached LLM-generated narratives keyed by insight kind + scope +
+// a hash of the grounding data, so repeat views don't re-spend premium requests.
+export const aiInsights = pgTable(
+  "ai_insights",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    kind: varchar("kind", { length: 50 }).notNull(),
+    scopeKey: varchar("scope_key", { length: 255 }).notNull(),
+    windowStart: date("window_start"),
+    windowEnd: date("window_end"),
+    contentHash: varchar("content_hash", { length: 64 }).notNull(),
+    model: varchar("model", { length: 255 }),
+    language: varchar("language", { length: 8 }).notNull().default("en"),
+    content: text("content").notNull(),
+    structured: jsonb("structured"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_ai_insights_unique").on(table.kind, table.scopeKey, table.contentHash),
+    index("idx_ai_insights_kind").on(table.kind),
+  ]
+);
 
 // ── Audit Log ──
 

@@ -8,7 +8,7 @@ import {
   CreditCard,
   GitPullRequest,
   Layers,
-  Sparkles,
+  Gem,
   Coins,
   Contact,
   Network,
@@ -19,6 +19,7 @@ import { AgentIcon } from "@/components/icons/agent-icon";
 import { CliIcon } from "@/components/icons/cli-icon";
 import { useTranslation } from "@/lib/i18n/locale-provider";
 import { ConfigurationBanner } from "@/components/layout/configuration-banner";
+import { Reveal } from "@/components/ui/reveal";
 
 export default function LandingPage() {
   const { t } = useTranslation();
@@ -77,7 +78,7 @@ export default function LandingPage() {
       title: t("landing.premiumRequests"),
       description: t("landing.premiumRequestsDesc"),
       href: "/premium-requests",
-      icon: Sparkles,
+      icon: Gem,
       color: "text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400",
     },
     {
@@ -114,7 +115,7 @@ export default function LandingPage() {
     <div className="mx-auto max-w-5xl space-y-10 py-8">
       <ConfigurationBanner />
       {/* Hero */}
-      <div className="text-center">
+      <Reveal className="text-center">
         <div className="mb-4 flex justify-center">
           <Image
             src="/copilot-icon.svg"
@@ -137,10 +138,10 @@ export default function LandingPage() {
           {t("landing.viewCopilotUsage")}
           <ArrowRight className="h-4 w-4" />
         </Link>
-      </div>
+      </Reveal>
 
       {/* Section Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <Reveal stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {sections.map((s) => {
           const Icon = s.icon;
           return (
@@ -163,7 +164,7 @@ export default function LandingPage() {
             </Link>
           );
         })}
-      </div>
+      </Reveal>
 
       {/* Data source note */}
       <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-center text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300">

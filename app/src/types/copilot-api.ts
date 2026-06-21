@@ -69,6 +69,16 @@ export interface CopilotUsageRecord {
   loc_added_sum: number;
   loc_deleted_sum: number;
 
+  /**
+   * Total AI credits the user consumed across all Copilot activity over the
+   * report window (Copilot Usage Metrics API, added 2026-06-19). It is an
+   * overall per-user total — not broken down by feature, model, or surface —
+   * and is a consumption *signal*, not a billed/invoiced amount. Refer to the
+   * billing APIs for authoritative spend.
+   * https://github.blog/changelog/2026-06-19-ai-credits-consumed-per-user-now-in-the-copilot-usage-metrics-api/
+   */
+  ai_credits_used?: number;
+
   // Chat mode breakdowns
   chat_panel_agent_mode?: number;
   chat_panel_ask_mode?: number;

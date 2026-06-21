@@ -149,6 +149,7 @@ export interface FactUsageDailyRow {
   locSuggestedToDeleteSum: number;
   locAddedSum: number;
   locDeletedSum: number;
+  aiCreditsUsed: number;
   aiAdoptionPhase: number | null;
   aiAdoptionPhaseVersion: string | null;
 }
@@ -262,6 +263,10 @@ export function transformToFactUsage(record: CopilotUsageRecord): FactUsageDaily
     locSuggestedToDeleteSum: record.loc_suggested_to_delete_sum ?? 0,
     locAddedSum: record.loc_added_sum ?? 0,
     locDeletedSum: record.loc_deleted_sum ?? 0,
+    aiCreditsUsed:
+      typeof record.ai_credits_used === "number" && Number.isFinite(record.ai_credits_used)
+        ? record.ai_credits_used
+        : 0,
     aiAdoptionPhase: aiPhase.phase,
     aiAdoptionPhaseVersion: aiPhase.version,
   };

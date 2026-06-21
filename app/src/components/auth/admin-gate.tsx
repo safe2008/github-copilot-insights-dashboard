@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ShieldAlert, Loader2, AlertCircle } from "lucide-react";
+import { useTranslation } from "@/lib/i18n/locale-provider";
 
 /**
  * Admin authentication gate for the Settings area.
@@ -9,6 +10,7 @@ import { ShieldAlert, Loader2, AlertCircle } from "lucide-react";
  * Separate from the dashboard-level AuthGate (which uses DASHBOARD_PASSWORD).
  */
 export function AdminGate({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<"checking" | "open" | "locked" | "authenticated">("checking");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -46,10 +48,10 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
         setStatus("authenticated");
       } else {
         const data = await res.json();
-        setError(data.error ?? "Invalid password");
+        setError(data.error ?? t("auth.invalidPassword"));
       }
     } catch {
-      setError("Network error");
+      setError(t("auth.networkError"));
     } finally {
       setVerifying(false);
     }
@@ -71,17 +73,17 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
     <div className="mx-auto mt-12 w-full max-w-sm rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
       <div className="mb-4 flex items-center gap-2">
         <ShieldAlert className="h-5 w-5 text-amber-600" />
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Admin Access Required</h2>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t("auth.adminAccessRequired")}</h2>
       </div>
       <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-        Enter the admin password to access Settings.
+        {t("auth.adminPrompt")}
       </p>
       <form onSubmit={handleSubmit}>
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Admin password"
+          placeholder={t("auth.adminPassword")}
           autoFocus
           className="mb-3 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-xs focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
           autoComplete="off"
@@ -100,7 +102,7 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
           {verifying ? (
             <Loader2 className="mx-auto h-4 w-4 animate-spin" />
           ) : (
-            "Unlock Settings"
+            t("auth.unlockSettings")
           )}
         </button>
       </form>

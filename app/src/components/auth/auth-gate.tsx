@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Lock, Loader2, AlertCircle } from "lucide-react";
+import { useTranslation } from "@/lib/i18n/locale-provider";
 
 /**
  * Global authentication gate. When DASHBOARD_PASSWORD is set on the server,
@@ -12,6 +13,7 @@ import { Lock, Loader2, AlertCircle } from "lucide-react";
  * protects the Settings pages.
  */
 export function AuthGate({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<"checking" | "open" | "locked" | "authenticated">("checking");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -50,10 +52,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         setStatus("authenticated");
       } else {
         const data = await res.json();
-        setError(data.error ?? "Invalid password");
+        setError(data.error ?? t("auth.invalidPassword"));
       }
     } catch {
-      setError("Network error");
+      setError(t("auth.networkError"));
     } finally {
       setVerifying(false);
     }
@@ -67,7 +69,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          <span className="text-sm text-gray-500 dark:text-gray-400">Loading…</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">{t("common.loading")}</span>
         </div>
       </div>
     );
@@ -82,17 +84,17 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div className="mb-4 flex items-center gap-2">
           <Lock className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Dashboard Access</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t("auth.dashboardAccess")}</h2>
         </div>
         <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-          Enter the password to access the Copilot Insights dashboard.
+          {t("auth.dashboardPrompt")}
         </p>
         <form onSubmit={handleSubmit}>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
+            placeholder={t("auth.password")}
             autoFocus
             className="mb-3 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-xs focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
             autoComplete="off"
@@ -111,7 +113,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             {verifying ? (
               <Loader2 className="mx-auto h-4 w-4 animate-spin" />
             ) : (
-              "Unlock"
+              t("auth.unlock")
             )}
           </button>
         </form>

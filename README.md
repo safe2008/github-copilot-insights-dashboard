@@ -150,6 +150,11 @@ Schedule automatic syncs, trigger manual pulls, or upload NDJSON exports.
 
 See [docs/architecture.md](docs/architecture.md) for detailed architecture documentation.
 
+The optional **AI Analyst** turns your Copilot data into written executive, cost, adoption, and
+delivery analysis using the GitHub Copilot SDK. See
+[docs/ai-analyst.md](docs/ai-analyst.md) for a full transparency report on the data it gathers, the
+prompts it uses, and how analysis is generated, cached, and secured.
+
 ## ✅ Prerequisites
 
 - **Node.js** 24+ and **pnpm** (`corepack enable`)

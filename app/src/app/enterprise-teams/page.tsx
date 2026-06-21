@@ -17,6 +17,7 @@ interface Team {
   name: string;
   slug: string;
   memberCount: number;
+  aiCreditsUsed: number;
 }
 
 interface TeamMember {
@@ -88,6 +89,7 @@ export default function EnterpriseTeamsPage() {
   /* ── Derived stats ── */
 
   const totalMembers = teams.reduce((sum, team) => sum + team.memberCount, 0);
+  const totalAiCredits = teams.reduce((sum, team) => sum + team.aiCreditsUsed, 0);
   const selectedTeam = teams.find((team) => team.id === selectedTeamId) ?? null;
 
   /* ── Loading state ── */
@@ -129,6 +131,14 @@ export default function EnterpriseTeamsPage() {
             </span>
             <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
               {t("teams.totalMembers")}
+            </span>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+            <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+              {totalAiCredits.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+            </span>
+            <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
+              {t("teams.totalAiCredits")}
             </span>
           </div>
         </div>
@@ -184,6 +194,11 @@ export default function EnterpriseTeamsPage() {
                     <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                       {team.memberCount} {t("teams.members")}
                     </p>
+                    {team.aiCreditsUsed > 0 && (
+                      <p className="mt-0.5 text-xs font-medium text-indigo-600 dark:text-indigo-400">
+                        {team.aiCreditsUsed.toLocaleString(undefined, { maximumFractionDigits: 1 })} {t("teams.aiCreditsLabel")}
+                      </p>
+                    )}
                   </div>
                   <ChevronRight
                     className={cn(

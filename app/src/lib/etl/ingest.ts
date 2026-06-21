@@ -394,6 +394,7 @@ async function loadRecords(
         locSuggestedToDeleteSum: factRow.locSuggestedToDeleteSum,
         locAddedSum: factRow.locAddedSum,
         locDeletedSum: factRow.locDeletedSum,
+        aiCreditsUsed: String(factRow.aiCreditsUsed),
         aiAdoptionPhase: factRow.aiAdoptionPhase,
         aiAdoptionPhaseVersion: factRow.aiAdoptionPhaseVersion,
       })

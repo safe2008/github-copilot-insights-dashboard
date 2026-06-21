@@ -96,6 +96,7 @@ export async function GET(request: NextRequest) {
             sumCodeAccept: sql<number>`COALESCE(SUM(${factCopilotUsageDaily.codeAcceptanceActivityCount}), 0)`,
             sumLocAdded: sql<number>`COALESCE(SUM(${factCopilotUsageDaily.locAddedSum}), 0)`,
             sumLocDeleted: sql<number>`COALESCE(SUM(${factCopilotUsageDaily.locDeletedSum}), 0)`,
+            sumAiCredits: sql<number>`COALESCE(SUM(${factCopilotUsageDaily.aiCreditsUsed}), 0)::float8`,
           })
           .from(factCopilotUsageDaily)
           .where(classifiedWhere())
@@ -183,6 +184,8 @@ export async function GET(request: NextRequest) {
         avgCodeAccepted: avg(Number(r?.sumCodeAccept ?? 0), users),
         avgLocAdded: avg(Number(r?.sumLocAdded ?? 0), users),
         avgLocDeleted: avg(Number(r?.sumLocDeleted ?? 0), users),
+        avgAiCredits: avg(Number(r?.sumAiCredits ?? 0), users),
+        totalAiCredits: Math.round(Number(r?.sumAiCredits ?? 0) * 100) / 100,
       };
     });
 

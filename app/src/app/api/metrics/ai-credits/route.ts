@@ -10,6 +10,7 @@ import {
   monthKey,
   type NormalizedAiCreditItem,
 } from "@/lib/db/ai-credit-usage";
+import { getCreditConsumption } from "@/lib/db/ai-credit-consumption";
 
 export const dynamic = "force-dynamic";
 
@@ -63,10 +64,10 @@ const querySchema = z.object({
   year: z.coerce.number().int().min(2020).max(2100).optional(),
   month: z.coerce.number().int().min(1).max(12).optional(),
   model: z.string().optional(),
-  org: z.string().optional(),
-  user: z.string().optional(),
-  team: z.string().optional(),
   costCenter: z.string().optional(),
+  userId: z.coerce.number().int().optional(),
+  orgId: z.string().optional(),
+  teamId: z.string().optional(),
 });
 
 class GitHubHttpError extends Error {
@@ -200,17 +201,16 @@ async function fetchUsageItems(
 
 interface MatchFilters {
   model: Set<string> | null;
-  org: Set<string> | null;
-  user: Set<string> | null;
-  team: Set<string> | null;
   costCenter: Set<string> | null;
 }
 
+// Billing usage items only carry model / SKU / cost-center (and sometimes org)
+// dimensions — never per-user or per-team. The user / team / org filters are
+// served by the DB consumption layer instead, so billing is filtered on the two
+// dimensions it reliably provides. This also avoids zeroing the cost view when a
+// dimension the billing feed lacks is selected.
 function usageMatchesFilters(item: NormalizedAiCreditItem, filters: MatchFilters): boolean {
   if (filters.model && !filters.model.has((item.model ?? "").toLowerCase())) return false;
-  if (filters.org && !filters.org.has((item.orgName ?? "").toLowerCase())) return false;
-  if (filters.user && !filters.user.has((item.userLogin ?? "").toLowerCase())) return false;
-  if (filters.team && !filters.team.has((item.teamName ?? "").toLowerCase())) return false;
   if (filters.costCenter && !filters.costCenter.has((item.costCenter ?? "").toLowerCase())) return false;
   return true;
 }
@@ -276,10 +276,10 @@ export async function GET(request: NextRequest) {
       year: sp.get("year") ?? undefined,
       month: sp.get("month") ?? undefined,
       model: sp.get("model") ?? undefined,
-      org: sp.get("org") ?? undefined,
-      user: sp.get("user") ?? undefined,
-      team: sp.get("team") ?? undefined,
       costCenter: sp.get("costCenter") ?? undefined,
+      userId: sp.get("userId") ?? undefined,
+      orgId: sp.get("orgId") ?? undefined,
+      teamId: sp.get("teamId") ?? undefined,
     });
 
     const year = parsed.year ?? now.getFullYear();
@@ -287,9 +287,6 @@ export async function GET(request: NextRequest) {
 
     const selectedFilters: MatchFilters = {
       model: parseCsvSet(parsed.model),
-      org: parseCsvSet(parsed.org),
-      user: parseCsvSet(parsed.user),
-      team: parseCsvSet(parsed.team),
       costCenter: parseCsvSet(parsed.costCenter),
     };
 
@@ -362,14 +359,10 @@ export async function GET(request: NextRequest) {
       planCounts[plan] = (planCounts[plan] || 0) + 1;
     }
 
-    // 3. Filter option lists (from unfiltered items).
-    // Keep raw model identifiers as filter values (matching uses the raw id);
-    // display names are resolved separately for the labels.
+    // 3. Billing filter option lists (from unfiltered items). User / team / org
+    // options are sourced from the DB consumption layer instead (see below).
     const filterOptions = {
       models: Array.from(new Set(usageItems.map((i) => i.model).filter((v): v is string => Boolean(v)))).sort((a, b) => getModelDisplayName(a).localeCompare(getModelDisplayName(b))),
-      orgs: Array.from(new Set(usageItems.map((i) => i.orgName).filter((v): v is string => Boolean(v)))).sort((a, b) => a.localeCompare(b)),
-      users: Array.from(new Set(usageItems.map((i) => i.userLogin).filter((v): v is string => Boolean(v)))).sort((a, b) => a.localeCompare(b)),
-      teams: Array.from(new Set(usageItems.map((i) => i.teamName).filter((v): v is string => Boolean(v)))).sort((a, b) => a.localeCompare(b)),
       costCenters: Array.from(new Set(usageItems.map((i) => i.costCenter).filter((v): v is string => Boolean(v)))).sort((a, b) => a.localeCompare(b)),
     };
 
@@ -417,8 +410,27 @@ export async function GET(request: NextRequest) {
     const perTeamBreakdown = toBreakdown(perTeamMap, "team");
     const perCostCenterBreakdown = toBreakdown(perCostCenterMap, "costCenter");
 
-    // Resolve display names for users.
-    const userLogins = Array.from(new Set([...perUserMap.keys(), ...filterOptions.users]));
+    // Per-user / per-team / per-org AI credit consumption from the usage-metrics
+    // signal (fact_copilot_usage_daily.ai_credits_used). This also drives the
+    // user / team / org filters, which the billing feed cannot populate.
+    const windowStart = `${year}-${String(month).padStart(2, "0")}-01`;
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const windowEnd = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    const consumption = await getCreditConsumption(windowStart, windowEnd, {
+      userId: parsed.userId,
+      orgId: parsed.orgId,
+      teamId: parsed.teamId,
+    });
+
+    // Resolve display names. Bounded to the rows actually rendered (billing +
+    // consumption breakdowns) to avoid a per-request lookup of every user in the
+    // window; the user filter options fall back to the login as their label.
+    const userLogins = Array.from(
+      new Set([
+        ...perUserMap.keys(),
+        ...consumption.perUser.map((u) => u.userLogin),
+      ]),
+    );
     const displayNameMap = await resolveDisplayNames(userLogins, token);
     const perUserBreakdown = Array.from(perUserMap.entries())
       .map(([user, bucket]) => ({ user, displayLabel: formatUserLabel(user, displayNameMap), ...roundBucketAmounts(bucket) }))
@@ -522,20 +534,20 @@ export async function GET(request: NextRequest) {
       filters: {
         options: {
           models: filterOptions.models.map((value) => ({ value, label: getModelDisplayName(value) })),
-          orgs: filterOptions.orgs,
-          users: filterOptions.users.map((login) => ({
-            login,
-            displayLabel: formatUserLabel(login, displayNameMap),
-          })),
-          teams: filterOptions.teams,
           costCenters: filterOptions.costCenters,
+          users: consumption.options.users.map((u) => ({
+            userId: u.userId,
+            displayLabel: formatUserLabel(u.userLogin, displayNameMap),
+          })),
+          orgs: consumption.options.orgs,
+          teams: consumption.options.teams,
         },
         selected: {
           model: parsed.model ?? "",
-          org: parsed.org ?? "",
-          user: parsed.user ?? "",
-          team: parsed.team ?? "",
           costCenter: parsed.costCenter ?? "",
+          userId: parsed.userId != null ? String(parsed.userId) : "",
+          orgId: parsed.orgId ?? "",
+          teamId: parsed.teamId ?? "",
         },
       },
       perModelBreakdown,
@@ -547,6 +559,20 @@ export async function GET(request: NextRequest) {
       dailyTrend,
       monthlyTrend,
       changeVsPrevious,
+      creditConsumption: {
+        available: consumption.available,
+        totalCreditsUsed: consumption.totalCreditsUsed,
+        activeUsers: consumption.activeUsers,
+        perUser: consumption.perUser.map((u) => ({
+          userId: u.userId,
+          userLogin: u.userLogin,
+          displayLabel: formatUserLabel(u.userLogin, displayNameMap),
+          creditsUsed: u.creditsUsed,
+          daysActive: u.daysActive,
+        })),
+        perOrg: consumption.perOrg,
+        perTeam: consumption.perTeam,
+      },
     });
   } catch (err) {
     console.error("AI credits API error:", err);
