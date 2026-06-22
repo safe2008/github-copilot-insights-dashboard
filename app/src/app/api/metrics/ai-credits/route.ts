@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getGitHubConfig } from "@/lib/db/settings";
-import { resolveDisplayNames, formatUserLabel } from "@/lib/github/resolve-display-names";
+import { resolveUserNames } from "@/lib/github/resolve-display-names";
 import { getModelDisplayName } from "@/lib/utils/model-display-names";
 import { safeErrorMessage } from "@/lib/auth";
 import {
@@ -429,7 +429,7 @@ export async function GET(request: NextRequest) {
     // rendered breakdown rows (billing + consumption) and the user filter
     // options. This mirrors the shared /api/filters behaviour so dropdown
     // entries with no usage in the window still show "Name (login)" rather than
-    // falling back to the bare login. resolveDisplayNames dedupes and batches.
+    // falling back to the bare login. resolveUserNames dedupes and batches.
     const userLogins = Array.from(
       new Set([
         ...perUserMap.keys(),
@@ -437,9 +437,9 @@ export async function GET(request: NextRequest) {
         ...consumption.options.users.map((u) => u.userLogin),
       ]),
     );
-    const displayNameMap = await resolveDisplayNames(userLogins, token);
+    const names = await resolveUserNames(userLogins, token);
     const perUserBreakdown = Array.from(perUserMap.entries())
-      .map(([user, bucket]) => ({ user, displayLabel: formatUserLabel(user, displayNameMap), ...roundBucketAmounts(bucket) }))
+      .map(([user, bucket]) => ({ user, displayLabel: names.label(user), ...roundBucketAmounts(bucket) }))
       .sort((a, b) => b.grossQuantity - a.grossQuantity);
 
     const dailyTrend = Array.from(perDayMap.entries())
@@ -543,7 +543,7 @@ export async function GET(request: NextRequest) {
           costCenters: filterOptions.costCenters,
           users: consumption.options.users.map((u) => ({
             userId: u.userId,
-            displayLabel: formatUserLabel(u.userLogin, displayNameMap),
+            displayLabel: names.label(u.userLogin),
           })),
           orgs: consumption.options.orgs,
           teams: consumption.options.teams,
@@ -572,7 +572,7 @@ export async function GET(request: NextRequest) {
         perUser: consumption.perUser.map((u) => ({
           userId: u.userId,
           userLogin: u.userLogin,
-          displayLabel: formatUserLabel(u.userLogin, displayNameMap),
+          displayLabel: names.label(u.userLogin),
           creditsUsed: u.creditsUsed,
           daysActive: u.daysActive,
         })),

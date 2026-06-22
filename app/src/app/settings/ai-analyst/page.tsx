@@ -6,20 +6,56 @@ import {
   Save,
   Loader2,
   CheckCircle,
+  XCircle,
   AlertCircle,
+  ShieldCheck,
   KeyRound,
   Bot,
+  FileText,
+  Building2,
+  Database,
+  Trash2,
   Info,
   ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n/locale-provider";
+import { TokenField } from "@/components/ui/token-field";
 
 interface AiSettings {
   enabled: boolean;
   model: string;
+  additionalInstructions: string;
   configured: boolean;
   maskedToken: string | null;
+}
+
+interface AiAccessResult {
+  valid: boolean;
+  reason?: string;
+  login: string | null;
+  name: string | null;
+  model: string;
+  models: { id: string; name: string }[];
+  checkedAt: string;
+}
+
+interface AiEnterpriseContextStatus {
+  seats: {
+    latestSnapshotDate: string | null;
+    assignments: number;
+    uniqueAssignees: number;
+  };
+  orgMembers: {
+    orgs: number;
+    members: number;
+    lastSyncedAt: string | null;
+  };
+  accessHealth: {
+    checkedAt: string;
+    tokenValid: boolean;
+    failedChecks: number;
+  } | null;
 }
 
 export default function AiAnalystSettingsPage() {
@@ -32,9 +68,15 @@ export default function AiAnalystSettingsPage() {
   // Editable form state
   const [enabled, setEnabled] = useState(false);
   const [model, setModel] = useState("auto");
+  const [additionalInstructions, setAdditionalInstructions] = useState("");
   const [tokenInput, setTokenInput] = useState("");
   const [models, setModels] = useState<{ id: string; name: string }[] | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [access, setAccess] = useState<AiAccessResult | null>(null);
+  const [cache, setCache] = useState<{ count: number; lastUpdated: string | null } | null>(null);
+  const [enterpriseContext, setEnterpriseContext] = useState<AiEnterpriseContextStatus | null>(null);
+  const [clearingCache, setClearingCache] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,6 +87,7 @@ export default function AiAnalystSettingsPage() {
       setSettings(data);
       setEnabled(data.enabled);
       setModel(data.model);
+      setAdditionalInstructions(data.additionalInstructions ?? "");
     } catch {
       setMessage({ type: "error", text: t("aiSettings.loadError") });
     } finally {
@@ -70,16 +113,40 @@ export default function AiAnalystSettingsPage() {
     }
   }, [models, modelsLoading]);
 
+  const loadCache = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings/ai-analyst/cache");
+      if (res.ok) setCache(await res.json());
+    } catch {
+      /* cache info is best-effort */
+    }
+  }, []);
+
+  const loadEnterpriseContext = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings/ai-analyst/context");
+      if (res.ok) setEnterpriseContext(await res.json());
+    } catch {
+      /* enterprise context info is best-effort */
+    }
+  }, []);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadCache();
+    loadEnterpriseContext();
+  }, [load, loadCache, loadEnterpriseContext]);
 
   const save = async () => {
     setSaving(true);
     setMessage(null);
     const hadToken = !!tokenInput.trim();
     try {
-      const payload: Record<string, unknown> = { enabled, model };
+      const payload: Record<string, unknown> = {
+        enabled,
+        model,
+        additionalInstructions,
+      };
       if (hadToken) payload.token = tokenInput.trim();
 
       const res = await fetch("/api/settings/ai-analyst", {
@@ -92,7 +159,9 @@ export default function AiAnalystSettingsPage() {
         setMessage({ type: "error", text: data.error ?? t("aiSettings.saveError") });
         return;
       }
-      setTokenInput("");      setModels(null);      setMessage({
+      setTokenInput("");
+      setModels(null);
+      setMessage({
         type: "success",
         text: hadToken ? t("aiSettings.tokenVerifiedSaved") : t("aiSettings.saved"),
       });
@@ -101,6 +170,45 @@ export default function AiAnalystSettingsPage() {
       setMessage({ type: "error", text: t("aiSettings.saveNetworkError") });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const checkAccess = async () => {
+    setChecking(true);
+    setAccess(null);
+    try {
+      const res = await fetch("/api/settings/ai-analyst/check-access");
+      const data = await res.json();
+      if (res.ok) {
+        setAccess(data as AiAccessResult);
+        await loadEnterpriseContext();
+      } else {
+        setMessage({ type: "error", text: data.error ?? t("aiSettings.checkError") });
+      }
+    } catch {
+      setMessage({ type: "error", text: t("aiSettings.saveNetworkError") });
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const clearCache = async () => {
+    if (!window.confirm(t("aiSettings.cacheClearConfirm"))) return;
+    setClearingCache(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/settings/ai-analyst/cache", { method: "DELETE" });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: t("aiSettings.cacheCleared") });
+        await loadCache();
+      } else {
+        setMessage({ type: "error", text: data.error ?? t("aiSettings.cacheClearError") });
+      }
+    } catch {
+      setMessage({ type: "error", text: t("aiSettings.saveNetworkError") });
+    } finally {
+      setClearingCache(false);
     }
   };
 
@@ -196,20 +304,13 @@ export default function AiAnalystSettingsPage() {
             <ExternalLink className="h-3 w-3" />
           </a>
         </div>
-        {settings?.configured && (
-          <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-            {t("aiSettings.current")}{" "}
-            <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-gray-700">{settings.maskedToken}</code>
-            {" "}— {t("aiSettings.leaveBlank")}
-          </p>
-        )}
-        <input
-          type="password"
+        <TokenField
           value={tokenInput}
-          onChange={(e) => setTokenInput(e.target.value)}
+          onChange={setTokenInput}
           placeholder={t("aiSettings.tokenPlaceholder")}
-          autoComplete="off"
-          className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+          maskedToken={settings?.maskedToken ?? null}
+          currentLabel={t("aiSettings.current")}
+          currentNote={<> — {t("aiSettings.leaveBlank")}</>}
         />
         <div className="mt-2 space-y-2 text-xs text-gray-500 dark:text-gray-400">
           <p className="flex items-start gap-1.5">
@@ -257,7 +358,113 @@ export default function AiAnalystSettingsPage() {
         </p>
       </section>
 
-      <div className="flex items-center gap-3">
+      {/* Admin instructions / assumptions */}
+      <section className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
+        <div className="mb-3 flex items-center gap-2">
+          <FileText className="h-4 w-4 text-gray-500" />
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+            {t("aiSettings.instructionsTitle")}
+          </h3>
+        </div>
+        <p className="mb-3 text-sm text-gray-500 dark:text-gray-400">
+          {t("aiSettings.instructionsDesc")}
+        </p>
+        <textarea
+          value={additionalInstructions}
+          onChange={(e) => setAdditionalInstructions(e.target.value)}
+          maxLength={8000}
+          rows={7}
+          placeholder={t("aiSettings.instructionsPlaceholder")}
+          className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+        />
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+          <span>{t("aiSettings.instructionsHelp")}</span>
+          <span>{additionalInstructions.length}/8000</span>
+        </div>
+      </section>
+
+      {/* Enterprise context */}
+      <section className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
+        <div className="mb-3 flex items-center gap-2">
+          <Building2 className="h-4 w-4 text-gray-500" />
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+            {t("aiSettings.enterpriseContextTitle")}
+          </h3>
+        </div>
+        <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+          {t("aiSettings.enterpriseContextDesc")}
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-md border border-gray-200 p-3 dark:border-gray-700">
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{t("aiSettings.seatSnapshots")}</p>
+            <p className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">
+              {enterpriseContext?.seats.assignments ?? 0}
+            </p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {enterpriseContext?.seats.latestSnapshotDate
+                ? t("aiSettings.contextAsOf", enterpriseContext.seats.latestSnapshotDate)
+                : t("aiSettings.contextNotAvailable")}
+            </p>
+          </div>
+          <div className="rounded-md border border-gray-200 p-3 dark:border-gray-700">
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{t("aiSettings.orgMembers")}</p>
+            <p className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">
+              {enterpriseContext?.orgMembers.members ?? 0}
+            </p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {enterpriseContext?.orgMembers.orgs
+                ? t("aiSettings.contextAcrossOrgs", enterpriseContext.orgMembers.orgs)
+                : t("aiSettings.contextNotAvailable")}
+            </p>
+          </div>
+          <div className="rounded-md border border-gray-200 p-3 dark:border-gray-700">
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{t("aiSettings.accessHealth")}</p>
+            <p className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">
+              {enterpriseContext?.accessHealth
+                ? enterpriseContext.accessHealth.tokenValid
+                  ? t("aiSettings.accessHealthy")
+                  : t("aiSettings.accessNeedsReview")
+                : t("aiSettings.contextUnknown")}
+            </p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {enterpriseContext?.accessHealth
+                ? t("aiSettings.failedChecks", enterpriseContext.accessHealth.failedChecks)
+                : t("aiSettings.contextNotAvailable")}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Cached data */}
+      <section className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
+        <div className="mb-3 flex items-center gap-2">
+          <Database className="h-4 w-4 text-gray-500" />
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{t("aiSettings.cacheTitle")}</h3>
+        </div>
+        <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">{t("aiSettings.cacheDesc")}</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm text-gray-700 dark:text-gray-300">
+            <span className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{cache?.count ?? 0}</span>{" "}
+            {t("aiSettings.cacheRecords")}
+            {cache?.lastUpdated && (
+              <span className="ms-2 text-xs text-gray-400 dark:text-gray-500">
+                {t("aiSettings.cacheLastUpdated")} {new Date(cache.lastUpdated).toLocaleString()}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={clearCache}
+            disabled={clearingCache || !cache || cache.count === 0}
+            className="inline-flex items-center gap-2 rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30"
+          >
+            {clearingCache ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            {t("aiSettings.clearCache")}
+          </button>
+        </div>
+      </section>
+
+      <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={save}
@@ -267,7 +474,68 @@ export default function AiAnalystSettingsPage() {
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {saving ? (tokenInput.trim() ? t("aiSettings.verifying") : t("aiSettings.saving")) : t("aiSettings.saveChanges")}
         </button>
+        <button
+          type="button"
+          onClick={checkAccess}
+          disabled={checking || !settings?.configured}
+          title={settings?.configured ? t("aiSettings.checkAccessHint") : t("aiSettings.checkAccessNeedsToken")}
+          className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+        >
+          {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+          {t("aiSettings.checkAccess")}
+        </button>
       </div>
+
+      {access && (
+        <section className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{t("aiSettings.accessTitle")}</h3>
+            <span className="text-xs text-gray-400 dark:text-gray-500">{new Date(access.checkedAt).toLocaleString()}</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            {access.valid ? (
+              <span className="inline-flex items-center gap-1 font-medium text-green-700 dark:text-green-300">
+                <CheckCircle className="h-4 w-4" /> {t("aiSettings.accessValid")}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 font-medium text-red-700 dark:text-red-300">
+                <XCircle className="h-4 w-4" /> {t("aiSettings.accessInvalid")}
+              </span>
+            )}
+            {access.login && (
+              <span className="text-gray-600 dark:text-gray-400">
+                as <strong className="text-gray-800 dark:text-gray-200">{access.login}</strong>
+                {access.name ? ` (${access.name})` : ""}
+              </span>
+            )}
+          </div>
+          {!access.valid && access.reason && (
+            <p className="mt-2 text-xs text-red-600 dark:text-red-400">{access.reason}</p>
+          )}
+          {access.valid && (
+            <div className="mt-3">
+              <p className="mb-1 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                {t("aiSettings.availableModels")} ({access.models.length})
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {access.models.map((m) => (
+                  <span
+                    key={m.id}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs",
+                      m.id === access.model
+                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                        : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300",
+                    )}
+                  >
+                    {m.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

@@ -176,6 +176,13 @@
       "when": 1782079156700,
       "tag": "0024_organic_black_crow",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1782094971417,
+      "tag": "0025_strong_mad_thinker",
+      "breakpoints": true
     }
   ]
 }

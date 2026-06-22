@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getGitHubConfig } from "@/lib/db/settings";
-import { resolveDisplayNames } from "@/lib/github/resolve-display-names";
+import { resolveUserNames } from "@/lib/github/resolve-display-names";
+import { persistCopilotSeatAssignments } from "@/lib/etl/enterprise-context";
 
 const GITHUB_API_BASE = "https://api.github.com";
 const API_VERSION = "2026-03-10";
@@ -104,9 +105,11 @@ export async function GET() {
       page++;
     }
 
+    await persistCopilotSeatAssignments({ enterpriseSlug, seats: allSeats });
+
     // Fetch user display names concurrently (best-effort)
     const uniqueLogins = [...new Set(allSeats.map((s) => s.assignee?.login).filter(Boolean))];
-    const displayNameMap = await resolveDisplayNames(uniqueLogins, token);
+    const names = await resolveUserNames(uniqueLogins, token);
 
     // Deduplicate seats by user login — highest plan wins (enterprise > business)
     const PLAN_TIER: Record<string, number> = { enterprise: 2, business: 1 };
@@ -153,7 +156,7 @@ export async function GET() {
     }> = [];
 
     for (const [login, seats] of userSeatsMap) {
-      const displayName = displayNameMap.get(login) ?? null;
+      const displayName = names.name(login);
 
       // Determine effective (highest-tier) plan across all assignments
       let effectivePlan = "unknown";
@@ -252,7 +255,7 @@ export async function GET() {
       const login = seat.assignee?.login ?? "unknown";
       return {
         login,
-        displayName: displayNameMap.get(login) ?? null,
+        displayName: names.name(login),
         planType: seat.plan_type || "unknown",
         assignmentMethod: seat.assigning_team ? "team" : "direct",
         assigningTeam: seat.assigning_team?.name ?? null,

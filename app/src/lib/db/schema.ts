@@ -102,6 +102,27 @@ export const dimUser = pgTable(
   ]
 );
 
+export const dimOrgMember = pgTable(
+  "dim_org_member",
+  {
+    id: serial("id").primaryKey(),
+    orgId: integer("org_id").notNull().references(() => dimOrg.orgId),
+    orgLogin: varchar("org_login", { length: 255 }).notNull(),
+    githubOrgId: integer("github_org_id"),
+    userId: integer("user_id").notNull(),
+    userLogin: varchar("user_login", { length: 255 }).notNull(),
+    avatarUrl: text("avatar_url"),
+    memberType: varchar("member_type", { length: 50 }).default("User").notNull(),
+    siteAdmin: boolean("site_admin").default(false).notNull(),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_dim_org_member_unique").on(table.orgId, table.userId),
+    index("idx_dim_org_member_org").on(table.orgId),
+    index("idx_dim_org_member_user").on(table.userId),
+  ]
+);
+
 export const dimIde = pgTable("dim_ide", {
   ideId: serial("ide_id").primaryKey(),
   ideName: varchar("ide_name", { length: 255 }).notNull().unique(),
@@ -225,6 +246,37 @@ export const factAiCreditUsage = pgTable(
   (table) => [
     index("idx_fact_ai_credit_period").on(table.enterpriseSlug, table.periodYear, table.periodMonth),
     index("idx_fact_ai_credit_model").on(table.model),
+  ]
+);
+
+export const factCopilotSeatAssignment = pgTable(
+  "fact_copilot_seat_assignment",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    snapshotDate: date("snapshot_date").notNull(),
+    enterpriseSlug: varchar("enterprise_slug", { length: 255 }).notNull(),
+    assigneeLogin: varchar("assignee_login", { length: 255 }).notNull(),
+    assigneeGithubId: integer("assignee_github_id"),
+    organizationLogin: varchar("organization_login", { length: 255 }),
+    organizationGithubId: integer("organization_github_id"),
+    assigningTeamGithubId: integer("assigning_team_github_id"),
+    assigningTeamName: varchar("assigning_team_name", { length: 255 }),
+    assigningTeamSlug: varchar("assigning_team_slug", { length: 255 }),
+    assignmentMethod: varchar("assignment_method", { length: 50 }).notNull(),
+    planType: varchar("plan_type", { length: 50 }).notNull().default("unknown"),
+    seatCreatedAt: timestamp("seat_created_at", { withTimezone: true }),
+    seatUpdatedAt: timestamp("seat_updated_at", { withTimezone: true }),
+    pendingCancellationDate: date("pending_cancellation_date"),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
+    lastActivityEditor: varchar("last_activity_editor", { length: 255 }),
+    rawJson: jsonb("raw_json"),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_fact_seat_snapshot_date").on(table.snapshotDate),
+    index("idx_fact_seat_enterprise_date").on(table.enterpriseSlug, table.snapshotDate),
+    index("idx_fact_seat_assignee").on(table.assigneeLogin),
+    index("idx_fact_seat_assignment_method").on(table.assignmentMethod),
   ]
 );
 
@@ -468,6 +520,28 @@ export const aiInsights = pgTable(
   (table) => [
     uniqueIndex("idx_ai_insights_unique").on(table.kind, table.scopeKey, table.contentHash),
     index("idx_ai_insights_kind").on(table.kind),
+  ]
+);
+
+export const githubAccessCheckSnapshot = pgTable(
+  "github_access_check_snapshot",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).defaultNow().notNull(),
+    enterpriseSlug: varchar("enterprise_slug", { length: 255 }),
+    tokenLogin: varchar("token_login", { length: 255 }),
+    tokenName: varchar("token_name", { length: 255 }),
+    tokenType: varchar("token_type", { length: 50 }).notNull().default("unknown"),
+    tokenValid: boolean("token_valid").default(false).notNull(),
+    representativeOrg: varchar("representative_org", { length: 255 }),
+    representativeTeam: varchar("representative_team", { length: 255 }),
+    scopes: jsonb("scopes").notNull().default([]),
+    orgs: jsonb("orgs").notNull().default([]),
+    checks: jsonb("checks").notNull().default([]),
+  },
+  (table) => [
+    index("idx_github_access_checked_at").on(table.checkedAt),
+    index("idx_github_access_enterprise").on(table.enterpriseSlug),
   ]
 );
 

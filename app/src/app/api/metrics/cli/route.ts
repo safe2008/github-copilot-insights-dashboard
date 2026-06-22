@@ -7,8 +7,7 @@ import {
 import { sql, and, gte, lte, eq } from "drizzle-orm";
 import { daysAgo, isValidDate } from "@/lib/utils";
 import { z } from "zod";
-import { getGitHubConfig } from "@/lib/db/settings";
-import { resolveDisplayNames, formatUserLabel } from "@/lib/github/resolve-display-names";
+import { resolveUserNames } from "@/lib/github/resolve-display-names";
 import { safeErrorMessage } from "@/lib/auth";
 import { buildTeamAwareCondition, resolveTeamAwareUserFilter } from "@/lib/db/team-filter";
 
@@ -278,12 +277,8 @@ export async function GET(request: NextRequest) {
 
     const cliStatsMap = new Map(cliUserStats.map((s) => [s.userId, s]));
 
-    // Resolve display names
-    const cliLogins = topCliUsers.map((u) => u.userLogin);
-    const { token } = await getGitHubConfig();
-    const displayNameMap = token
-      ? await resolveDisplayNames(cliLogins, token)
-      : new Map<string, string>();
+    // Resolve display names (best-effort)
+    const names = await resolveUserNames(topCliUsers.map((u) => u.userLogin));
 
     const topCliUsersEnriched = topCliUsers.map((u) => {
       const stats = cliStatsMap.get(u.userId);
@@ -292,7 +287,7 @@ export async function GET(request: NextRequest) {
       return {
         userId: u.userId,
         userLogin: u.userLogin,
-        displayLabel: formatUserLabel(u.userLogin, displayNameMap),
+        displayLabel: names.label(u.userLogin),
         daysActive: Number(u.daysActive),
         totalInteractions: Number(u.totalInteractions),
         codeGenerated: codeGen,

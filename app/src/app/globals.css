@@ -7,7 +7,7 @@
     var(--font-sora), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
     Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
   --font-mono:
-    var(--font-jetbrains-mono), ui-monospace, "SF Mono", "SFMono-Regular", Menlo,
+    var(--font-cascadia-code), ui-monospace, "SF Mono", "SFMono-Regular", Menlo,
     Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
   --color-growth: #22c55e;
@@ -35,7 +35,7 @@
   /*
     Typography. Sora (geometric sans) is the primary UI typeface for Latin
     scripts (en/es/fr); Cairo is its Arabic companion — geometric, low-contrast
-    forms that echo Sora. JetBrains Mono is the monospace face for code,
+    forms that echo Sora. Cascadia Code is the monospace face for code,
     identifiers, and API paths. Font files load via next/font in
     app/src/app/layout.tsx and surface here as CSS custom properties.
   */
@@ -43,7 +43,7 @@
     font-family: var(--font-sans);
   }
 
-  /* Arabic locale swaps the sans stack to Cairo; mono stays JetBrains Mono. */
+  /* Arabic locale swaps the sans stack to Cairo; mono stays Cascadia Code. */
   :lang(ar) {
     --font-sans: var(--font-cairo), ui-sans-serif, system-ui, sans-serif;
   }

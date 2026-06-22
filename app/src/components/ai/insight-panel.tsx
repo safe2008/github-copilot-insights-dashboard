@@ -283,8 +283,13 @@ export function InsightPanel({
                 />
               </button>
               {showReasoning && (
-                <div className="max-h-40 overflow-y-auto whitespace-pre-wrap px-3 pb-2 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-                  {reasoning}
+                <div className="max-h-40 overflow-y-auto px-3 pb-2">
+                  <Markdown
+                    theme="dashboard"
+                    className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400 [&_code]:text-[10px] [&_h1]:text-xs [&_h2]:text-[11px] [&_h3]:text-[11px] [&_pre]:text-[10px]"
+                  >
+                    {reasoning}
+                  </Markdown>
                 </div>
               )}
             </div>
@@ -298,7 +303,7 @@ export function InsightPanel({
           ) : content ? (
             <>
               <div className="rounded-md bg-white/60 p-3 dark:bg-gray-900/40">
-                <Markdown>{content}</Markdown>
+                <Markdown theme="github">{content}</Markdown>
               </div>
               <p className="mt-3 flex items-start gap-1.5 border-t border-violet-200/60 pt-2 text-[11px] text-gray-500 dark:border-violet-900/30 dark:text-gray-400">
                 <FlaskConical className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />

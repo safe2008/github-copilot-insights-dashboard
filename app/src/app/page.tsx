@@ -136,7 +136,7 @@ export default function LandingPage() {
         <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
           {t("landing.title")}
         </h1>
-        <p className="mx-auto mt-3 max-w-3xl text-base text-gray-600 dark:text-gray-400">
+        <p className="mx-auto mt-3 max-w-2xl text-base text-gray-600 dark:text-gray-400">
           {t("landing.subtitle")}
         </p>
         <Link
@@ -149,7 +149,7 @@ export default function LandingPage() {
       </Reveal>
 
       {/* Section Cards */}
-      <Reveal stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <Reveal stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {sections.map((s) => {
           const Icon = s.icon;
           return (
@@ -159,14 +159,14 @@ export default function LandingPage() {
               className="group rounded-lg border border-gray-200 bg-white p-4 transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-800"
             >
               <div className="flex items-center gap-3">
-                <div className={`inline-flex shrink-0 rounded-lg p-2 ${s.color}`}>
+                <div className={`inline-flex shrink-0 rounded-lg p-2.5 ${s.color}`}>
                   <Icon className="h-5 w-5" />
                 </div>
-                <h2 className="text-sm font-semibold text-gray-900 group-hover:text-blue-600 dark:text-gray-100 dark:group-hover:text-blue-400">
+                <h2 className="min-w-0 text-sm font-semibold text-gray-900 group-hover:text-blue-600 dark:text-gray-100 dark:group-hover:text-blue-400">
                   {s.title}
                 </h2>
               </div>
-              <p className="mt-2 text-xs text-gray-500 leading-relaxed dark:text-gray-400">
+              <p className="mt-1 text-xs text-gray-500 leading-relaxed dark:text-gray-400">
                 {s.description}
               </p>
             </Link>

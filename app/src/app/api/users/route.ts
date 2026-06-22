@@ -4,8 +4,7 @@ import { factCopilotUsageDaily, dimUser, dimOrg } from "@/lib/db/schema";
 import { sql, and, gte, lte, eq, ilike } from "drizzle-orm";
 import { daysAgo, isValidDate } from "@/lib/utils";
 import { z } from "zod";
-import { getGitHubConfig } from "@/lib/db/settings";
-import { resolveDisplayNames, formatUserLabel } from "@/lib/github/resolve-display-names";
+import { resolveUserNames } from "@/lib/github/resolve-display-names";
 import { safeErrorMessage } from "@/lib/auth";
 
 const querySchema = z.object({
@@ -95,17 +94,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Resolve display names from GitHub
-    const logins = filtered.map((u) => u.userLogin);
-    const { token } = await getGitHubConfig();
-    const displayNameMap = token
-      ? await resolveDisplayNames(logins, token)
-      : new Map<string, string>();
+    // Resolve display names from GitHub (best-effort)
+    const names = await resolveUserNames(filtered.map((u) => u.userLogin));
 
     const result = filtered.map((u) => ({
       userId: u.userId,
       userLogin: u.userLogin,
-      displayLabel: formatUserLabel(u.userLogin, displayNameMap),
+      displayLabel: names.label(u.userLogin),
       daysActive: u.daysActive,
       totalInteractions: u.totalInteractions,
       avgInteractionsPerDay:

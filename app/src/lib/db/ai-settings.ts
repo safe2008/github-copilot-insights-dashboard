@@ -5,27 +5,32 @@ import { getSetting, setSetting } from "@/lib/db/settings";
  * - `ai_enabled`   → feature toggle (string-boolean, like `sync_enabled`)
  * - `copilot_token`→ GitHub Copilot token used by the Copilot SDK
  * - `ai_model`     → "auto" or a specific model id
+ * - `ai_additional_instructions` → admin-provided enterprise assumptions/context
  */
 export interface AiConfig {
   enabled: boolean;
   token: string | null;
   model: string;
+  additionalInstructions: string;
 }
 
 const ENABLED_KEY = "ai_enabled";
 const TOKEN_KEY = "copilot_token";
 const MODEL_KEY = "ai_model";
+const ADDITIONAL_INSTRUCTIONS_KEY = "ai_additional_instructions";
 
 export async function getAiConfig(): Promise<AiConfig> {
-  const [enabled, token, model] = await Promise.all([
+  const [enabled, token, model, additionalInstructions] = await Promise.all([
     getSetting(ENABLED_KEY),
     getSetting(TOKEN_KEY),
     getSetting(MODEL_KEY),
+    getSetting(ADDITIONAL_INSTRUCTIONS_KEY),
   ]);
   return {
     enabled: enabled === "true",
     token: token ?? null,
     model: model ?? "auto",
+    additionalInstructions: additionalInstructions ?? "",
   };
 }
 
@@ -46,8 +51,12 @@ export async function setAiConfig(p: {
   enabled?: boolean;
   token?: string;
   model?: string;
+  additionalInstructions?: string;
 }): Promise<void> {
   if (p.enabled !== undefined) await setSetting(ENABLED_KEY, p.enabled ? "true" : "false");
   if (p.token !== undefined) await setSetting(TOKEN_KEY, p.token);
   if (p.model !== undefined) await setSetting(MODEL_KEY, p.model);
+  if (p.additionalInstructions !== undefined) {
+    await setSetting(ADDITIONAL_INSTRUCTIONS_KEY, p.additionalInstructions);
+  }
 }

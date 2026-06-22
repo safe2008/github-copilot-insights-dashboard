@@ -50,8 +50,9 @@ exposed as CSS variables that feed the Tailwind theme. Never hardcode a
   character for a consistent RTL experience. Applied automatically when the locale
   is Arabic via a `:lang(ar)` rule that re-points `--font-sans` to Cairo. Var
   `--font-cairo`.
-- **Mono** — **JetBrains Mono**, for code, identifiers, API paths, SQL/table names,
-  and tabular values via `font-mono`. Var `--font-jetbrains-mono` → `--font-mono`.
+- **Mono** — **Cascadia Code**, Microsoft's monospace with programming ligatures.
+  Used for code, identifiers, API paths, SQL/table names, and tabular values via
+  `font-mono`. Var `--font-cascadia-code` → `--font-mono`.
 
 ### Type scale
 
@@ -62,7 +63,7 @@ exposed as CSS variables that feed the Tailwind theme. Never hardcode a
 - **Overline / KPI label**: Sora, 12px (`text-xs`), Medium 500, `uppercase tracking-wider`.
 - **Body**: Sora, 14px (`text-sm`), Regular 400.
 - **Caption / meta**: Sora, 12px (`text-xs`), Regular 400.
-- **Code / mono**: JetBrains Mono, 12px (`text-xs`).
+- **Code / mono**: Cascadia Code, 12px (`text-xs`).
 
 ## Spacing
 

@@ -11,8 +11,7 @@ import { sql, and, gte, lte, eq, inArray, like } from "drizzle-orm";
 import { daysAgo, isValidDate } from "@/lib/utils";
 import { getModelDisplayName } from "@/lib/utils/model-display-names";
 import { z } from "zod";
-import { getGitHubConfig } from "@/lib/db/settings";
-import { resolveDisplayNames, formatUserLabel } from "@/lib/github/resolve-display-names";
+import { resolveUserNames } from "@/lib/github/resolve-display-names";
 import { safeErrorMessage } from "@/lib/auth";
 import { buildTeamAwareCondition, resolveTeamAwareUserFilter } from "@/lib/db/team-filter";
 
@@ -270,16 +269,12 @@ export async function GET(request: NextRequest) {
       totalUsers: w.totalUsers,
     }));
 
-    // Resolve display names for top agent users
-    const agentLogins = topAgentUsers.map((u) => u.userLogin);
-    const { token } = await getGitHubConfig();
-    const displayNameMap = token
-      ? await resolveDisplayNames(agentLogins, token)
-      : new Map<string, string>();
+    // Resolve display names for top agent users (best-effort)
+    const names = await resolveUserNames(topAgentUsers.map((u) => u.userLogin));
     const topAgentUsersWithNames = topAgentUsers.map((u) => ({
       userId: u.userId,
       userLogin: u.userLogin,
-      displayLabel: formatUserLabel(u.userLogin, displayNameMap),
+      displayLabel: names.label(u.userLogin),
       daysActive: Number(u.daysActive),
       totalInteractions: Number(u.totalInteractions),
       codeGenerated: Number(u.codeGenerated),

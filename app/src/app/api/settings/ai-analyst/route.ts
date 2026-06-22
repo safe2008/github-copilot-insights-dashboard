@@ -14,10 +14,11 @@ function maskToken(value: string): string {
 
 export async function GET() {
   try {
-    const { enabled, token, model } = await getAiConfig();
+    const { enabled, token, model, additionalInstructions } = await getAiConfig();
     return NextResponse.json({
       enabled,
       model: model ?? "auto",
+      additionalInstructions,
       configured: Boolean(token),
       maskedToken: token ? maskToken(token) : null,
     });
@@ -34,6 +35,7 @@ const postSchema = z.object({
   enabled: z.boolean().optional(),
   token: z.string().max(1000).optional(),
   model: z.string().max(255).optional(),
+  additionalInstructions: z.string().max(8000).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -53,6 +55,7 @@ export async function POST(request: NextRequest) {
       enabled: body.enabled,
       token: body.token === "" ? undefined : body.token,
       model: body.model,
+      additionalInstructions: body.additionalInstructions,
     });
 
     // A new token means the in-process client must be recreated.
@@ -62,7 +65,12 @@ export async function POST(request: NextRequest) {
     logAudit({
       action: "ai_settings_updated",
       category: "settings",
-      details: { enabled: body.enabled, model: body.model, tokenChanged },
+      details: {
+        enabled: body.enabled,
+        model: body.model,
+        tokenChanged,
+        additionalInstructionsChanged: body.additionalInstructions !== undefined,
+      },
       ipAddress: getClientIp(request),
     });
 

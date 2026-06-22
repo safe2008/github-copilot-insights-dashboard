@@ -1,3 +1,5 @@
+import { getGitHubConfig } from "@/lib/db/settings";
+
 const GITHUB_API_BASE = "https://api.github.com";
 const GITHUB_GRAPHQL = "https://api.github.com/graphql";
 const API_VERSION = "2026-03-10";
@@ -141,4 +143,55 @@ export function formatUserLabel(
 ): string {
   const name = displayNameMap.get(login);
   return name ? `${name} (${login})` : login;
+}
+
+export interface ResolvedUserNames {
+  /** Best-effort GitHub display name for a login, or null when unresolved. */
+  name(login: string): string | null;
+  /** "Display Name (login)" label, or just the login when no name resolved. */
+  label(login: string): string;
+  /** The underlying login → display-name map (best-effort, may be partial). */
+  map: Map<string, string>;
+}
+
+/**
+ * Resolve GitHub display names for a batch of logins in one shot and return
+ * helpers to read them. Unifies the repeated "load token → resolveDisplayNames
+ * → formatUserLabel" pattern used across the report and metrics routes.
+ *
+ * Pass `token` when the caller already has it; omit it to have the GitHub token
+ * loaded from settings. When no token is configured (or resolution fails) every
+ * label falls back to the bare login. Best-effort — never throws.
+ */
+export async function resolveUserNames(
+  logins: Iterable<string>,
+  token?: string | null,
+): Promise<ResolvedUserNames> {
+  const unique = [...new Set([...logins].filter(Boolean))];
+  let map = new Map<string, string>();
+
+  if (unique.length > 0) {
+    let resolvedToken = token;
+    if (resolvedToken === undefined) {
+      try {
+        resolvedToken = (await getGitHubConfig()).token;
+      } catch (err) {
+        console.debug("resolveUserNames: token lookup failed:", err);
+        resolvedToken = null;
+      }
+    }
+    if (resolvedToken) {
+      try {
+        map = await resolveDisplayNames(unique, resolvedToken);
+      } catch (err) {
+        console.debug("resolveUserNames: display-name resolution failed:", err);
+      }
+    }
+  }
+
+  return {
+    name: (login) => map.get(login) ?? null,
+    label: (login) => formatUserLabel(login, map),
+    map,
+  };
 }

@@ -12,6 +12,6 @@ Technical documentation for Copilot Insights.
 ## Quick Links
 
 - [README](../README.md) — Project overview and getting started
-- [Design System](../DESIGN.md) — DESIGN.md standard: color tokens, typography (Sora, Cairo, JetBrains Mono), components, and the GSAP motion standard
+- [Design System](../DESIGN.md) — DESIGN.md standard: color tokens, typography (Sora, Cairo, Cascadia Code), components, and the GSAP motion standard
 - [Contributing](../CONTRIBUTING.md) — Contribution guidelines
 - [License](../LICENSE) — MIT License

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Sora, Cairo, JetBrains_Mono } from "next/font/google";
+import { Sora, Cairo, Cascadia_Code } from "next/font/google";
 import { Sidebar } from "@/components/layout/sidebar";
 import { AuthGate } from "@/components/auth/auth-gate";
 import { ThemeProvider } from "@/lib/theme/theme-provider";
@@ -23,9 +23,10 @@ const cairo = Cairo({
 });
 
 // Monospace typeface for code, identifiers, API paths, and tabular figures.
-const jetBrainsMono = JetBrains_Mono({
+// Cascadia Code is Microsoft's monospace with programming ligatures.
+const cascadiaCode = Cascadia_Code({
   subsets: ["latin"],
-  variable: "--font-jetbrains-mono",
+  variable: "--font-cascadia-code",
   display: "swap",
 });
 
@@ -50,7 +51,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${sora.variable} ${cairo.variable} ${jetBrainsMono.variable}`}
+      className={`${sora.variable} ${cairo.variable} ${cascadiaCode.variable}`}
     >
       <body className="bg-gray-50 text-gray-900 antialiased dark:bg-gray-900 dark:text-gray-100">
         <ThemeProvider>

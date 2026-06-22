@@ -4,8 +4,7 @@ import { factCopilotUsageDaily } from "@/lib/db/schema";
 import { sql, and, gte, lte, isNotNull, desc } from "drizzle-orm";
 import { daysAgo, isValidDate } from "@/lib/utils";
 import { z } from "zod";
-import { getGitHubConfig } from "@/lib/db/settings";
-import { resolveDisplayNames, formatUserLabel } from "@/lib/github/resolve-display-names";
+import { resolveUserNames } from "@/lib/github/resolve-display-names";
 import { safeErrorMessage } from "@/lib/auth";
 import { buildTeamAwareCondition, resolveTeamAwareUserFilter } from "@/lib/db/team-filter";
 import { AI_ADOPTION_PHASES, AI_ADOPTION_PHASE_KEYS, AI_ADOPTION_PHASE_LABELS } from "@/types/copilot-api";
@@ -190,17 +189,13 @@ export async function GET(request: NextRequest) {
     });
 
     // ── Top users with their current phase + resolved display names ──
-    const logins = topUserRows.map((u) => u.userLogin);
-    const { token } = await getGitHubConfig();
-    const displayNameMap = token
-      ? await resolveDisplayNames(logins, token)
-      : new Map<string, string>();
+    const names = await resolveUserNames(topUserRows.map((u) => u.userLogin));
     const topUsers = topUserRows.map((u) => {
       const phase = userPhaseMap.get(u.userId) ?? null;
       return {
         userId: u.userId,
         userLogin: u.userLogin,
-        displayLabel: formatUserLabel(u.userLogin, displayNameMap),
+        displayLabel: names.label(u.userLogin),
         phase,
         phaseKey: phase !== null ? AI_ADOPTION_PHASE_KEYS[phase as 0 | 1 | 2 | 3] : null,
         phaseLabel: phase !== null ? AI_ADOPTION_PHASE_LABELS[phase as 0 | 1 | 2 | 3] : null,

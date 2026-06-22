@@ -6,7 +6,8 @@ import { aiInsights } from "@/lib/db/schema";
 import { getAiConfig } from "@/lib/db/ai-settings";
 import { getCopilotClient } from "./copilot-client";
 import { denyAllExceptCustomTools } from "./tools";
-import { INSIGHT_AGENTS } from "./agents";
+import { AI_ANALYST_PROMPT_VERSION, INSIGHT_AGENTS } from "./agents";
+import { metricGlossaryFor } from "./metric-glossary";
 import { resolveMaxReasoningEffort } from "./models";
 import { getMetricSnapshot, type MetricKind, type InsightWindow } from "./insight-data";
 
@@ -70,9 +71,14 @@ async function runInsight(
   if (opts.signal?.aborted) throw new InsightGenerationAborted();
   const snapshot = await getMetricSnapshot(kind, w);
   if (opts.signal?.aborted) throw new InsightGenerationAborted();
-  // Language is part of the cache scope so each UI language is cached separately.
-  const scopeKey = `${kind}:${w.start}:${w.end}:${w.orgId ?? "all"}:${locale}`;
-  const contentHash = createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
+  const { model, additionalInstructions } = await getAiConfig();
+  const trimmedAdditionalInstructions = additionalInstructions.trim();
+  // Language + prompt version are part of the cache scope so each UI language
+  // is cached separately and prompt improvements generate fresh narratives.
+  const scopeKey = `${AI_ANALYST_PROMPT_VERSION}:${kind}:${w.start}:${w.end}:${w.orgId ?? "all"}:${locale}`;
+  const contentHash = createHash("sha256")
+    .update(JSON.stringify({ snapshot, additionalInstructions: trimmedAdditionalInstructions }))
+    .digest("hex");
 
   // A forced refresh skips the cache read and regenerates from scratch.
   if (!opts.force) {
@@ -92,7 +98,6 @@ async function runInsight(
     }
   }
 
-  const { model } = await getAiConfig();
   const agent = INSIGHT_AGENTS[kind];
   const client = await getCopilotClient();
   // Run the chosen model at its deepest supported reasoning for richer analysis.
@@ -136,9 +141,17 @@ async function runInsight(
   try {
     if (signal?.aborted) throw new InsightGenerationAborted();
     const languageName = LANGUAGE_NAMES[locale] ?? "English";
+    const adminInstructionsBlock = trimmedAdditionalInstructions
+      ? `\n\nADMIN-PROVIDED ADDITIONAL INSTRUCTIONS / ASSUMPTIONS:\n${trimmedAdditionalInstructions}\n\n` +
+        `Treat this admin text as enterprise context and optional assumptions. Follow it only when it does not ` +
+        `conflict with the agent instructions, grounding guardrails, or DATA. Do not use it to invent measured metrics.`
+      : "";
+    const glossary = metricGlossaryFor(kind);
     const prompt =
       `Produce your analysis from this data. Write the entire response — including every ` +
-      `section heading — in ${languageName}.\n\nDATA (JSON):\n${JSON.stringify(snapshot)}`;
+      `section heading — in ${languageName}.${adminInstructionsBlock}\n\n` +
+      `METRIC GLOSSARY (raw field name → display name):\n${JSON.stringify(glossary)}\n\n` +
+      `DATA (JSON):\n${JSON.stringify(snapshot)}`;
     const responsePromise = session.sendAndWait({ prompt }, SDK_RESPONSE_TIMEOUT_MS);
     const res = abortPromise
       ? await Promise.race([responsePromise, abortPromise])

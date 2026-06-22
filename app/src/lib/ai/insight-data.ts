@@ -3,10 +3,22 @@ import {
   factCopilotUsageDaily,
   factAiCreditUsage,
   factOrgAggregateDaily,
+  factCopilotSeatAssignment,
+  factUserLanguageDaily,
+  factUserIdeDaily,
+  factUserModelDaily,
+  dimEnterprise,
+  dimOrg,
+  dimOrgMember,
   dimUser,
+  dimLanguage,
+  dimIde,
+  dimModel,
   dimEnterpriseTeam,
   dimEnterpriseTeamMember,
+  githubAccessCheckSnapshot,
 } from "@/lib/db/schema";
+import { getGitHubConfig } from "@/lib/db/settings";
 import { sql, and, gte, lte, eq, desc, isNotNull } from "drizzle-orm";
 import {
   AI_ADOPTION_PHASES,
@@ -48,6 +60,413 @@ function usageWindow(w: InsightWindow) {
   return and(...conds);
 }
 
+function round(value: number, digits = 1): number {
+  return Number(value.toFixed(digits));
+}
+
+function pct(numerator: number, denominator: number): number | null {
+  return denominator > 0 ? round((numerator / denominator) * 100, 1) : null;
+}
+
+function daysInWindow(w: InsightWindow): number {
+  const MS = 86_400_000;
+  return Math.max(1, Math.round((Date.parse(w.end) - Date.parse(w.start)) / MS) + 1);
+}
+
+function trendLabel(changePct: number | null): "up" | "down" | "flat" | "insufficient_data" {
+  if (changePct === null) return "insufficient_data";
+  if (changePct >= 5) return "up";
+  if (changePct <= -5) return "down";
+  return "flat";
+}
+
+interface EvidenceSignal {
+  name: string;
+  present: boolean;
+}
+
+function dataQuality(args: {
+  window: InsightWindow;
+  sampleSize: number;
+  hasPreviousPeriod?: boolean;
+  hasCostData?: boolean;
+  hasDeliveryData?: boolean;
+  hasTeamData?: boolean;
+  evidence?: EvidenceSignal[];
+  warnings?: string[];
+}) {
+  const warnings = [...(args.warnings ?? [])];
+  if (args.sampleSize === 0) warnings.push("No users or records were available for this window.");
+  if (args.hasPreviousPeriod === false) warnings.push("Previous-period comparison is unavailable or has a zero baseline.");
+  if (args.hasCostData === false) warnings.push("AI-credit cost data is missing for this window.");
+  if (args.hasDeliveryData === false) warnings.push("Pull-request delivery data is missing for this window.");
+  if (args.hasTeamData === false) warnings.push("Enterprise team data is missing or teams have not been synced.");
+
+  const windowDays = daysInWindow(args.window);
+  const evidence = [
+    ...(args.hasPreviousPeriod !== undefined ? [{ name: "previous_period", present: args.hasPreviousPeriod }] : []),
+    ...(args.hasCostData !== undefined ? [{ name: "cost_data", present: args.hasCostData }] : []),
+    ...(args.hasDeliveryData !== undefined ? [{ name: "delivery_data", present: args.hasDeliveryData }] : []),
+    ...(args.hasTeamData !== undefined ? [{ name: "team_data", present: args.hasTeamData }] : []),
+    ...(args.evidence ?? []),
+  ];
+  const presentEvidence = evidence.filter((item) => item.present).length;
+
+  return {
+    windowDays,
+    sampleSize: args.sampleSize,
+    evidenceCompletenessPct: evidence.length > 0 ? pct(presentEvidence, evidence.length) : null,
+    evidenceSignals: evidence,
+    dataReadinessRationale: [
+      `${args.sampleSize} sample record(s) or user(s) across ${windowDays} day(s).`,
+      evidence.length > 0
+        ? `${presentEvidence}/${evidence.length} evidence signal(s) were available.`
+        : "No report-specific evidence signals were configured for this snapshot.",
+      warnings.length > 0
+        ? `${warnings.length} data-quality warning(s) detected.`
+        : "No major data-quality warnings were detected.",
+    ],
+    warnings,
+  };
+}
+
+function spendConcentration(rows: Array<{ netAmount: number }>) {
+  const total = rows.reduce((sum, row) => sum + row.netAmount, 0);
+  const top1 = rows[0]?.netAmount ?? 0;
+  const top3 = rows.slice(0, 3).reduce((sum, row) => sum + row.netAmount, 0);
+  return {
+    topModelSharePct: pct(top1, total),
+    top3ModelSharePct: pct(top3, total),
+  };
+}
+
+function median(values: Array<number | null | undefined>): number | null {
+  const nums = values.filter((v): v is number => typeof v === "number" && Number.isFinite(v)).sort((a, b) => a - b);
+  if (nums.length === 0) return null;
+  const mid = Math.floor(nums.length / 2);
+  return nums.length % 2 ? nums[mid] : round((nums[mid - 1] + nums[mid]) / 2, 2);
+}
+
+async function enterpriseContext(w: InsightWindow) {
+  const { enterpriseSlug } = await getGitHubConfig();
+  const scopedUserConds = [
+    eq(dimUser.isCurrent, true),
+    ...(w.orgId !== undefined ? [eq(dimUser.orgId, w.orgId)] : []),
+  ];
+
+  const [
+    enterpriseRows,
+    orgBaseRows,
+    orgMemberRows,
+    dimUserOrgRows,
+    orgUsageRows,
+    teamRows,
+    teamMemberRows,
+    licensedRows,
+    latestSeatDateRows,
+    latestAccessRows,
+    featureUsageRows,
+    languageRows,
+    editorRows,
+    modelRows,
+  ] = await Promise.all([
+    db.select({ enterpriseId: dimEnterprise.enterpriseId, enterpriseSlug: dimEnterprise.enterpriseSlug }).from(dimEnterprise),
+    db.select({ orgId: dimOrg.orgId, orgName: dimOrg.orgName, githubOrgId: dimOrg.githubOrgId }).from(dimOrg),
+    db
+      .select({ orgId: dimOrgMember.orgId, members: sql<number>`COUNT(DISTINCT ${dimOrgMember.userId})::int` })
+      .from(dimOrgMember)
+      .groupBy(dimOrgMember.orgId),
+    db
+      .select({ orgId: dimUser.orgId, members: sql<number>`COUNT(DISTINCT ${dimUser.userId})::int` })
+      .from(dimUser)
+      .where(eq(dimUser.isCurrent, true))
+      .groupBy(dimUser.orgId),
+    db
+      .select({
+        orgId: factCopilotUsageDaily.orgId,
+        activeUsers: sql<number>`COUNT(DISTINCT ${factCopilotUsageDaily.userId})::int`,
+        interactions: sql<number>`COALESCE(SUM(${factCopilotUsageDaily.userInitiatedInteractionCount}), 0)::int`,
+        aiCreditsUsed: sql<number>`COALESCE(SUM(${factCopilotUsageDaily.aiCreditsUsed}), 0)::float8`,
+      })
+      .from(factCopilotUsageDaily)
+      .where(usageWindow(w))
+      .groupBy(factCopilotUsageDaily.orgId),
+    db.select({ teamId: dimEnterpriseTeam.teamId, teamName: dimEnterpriseTeam.teamName }).from(dimEnterpriseTeam),
+    db.select({ members: sql<number>`COUNT(DISTINCT ${dimEnterpriseTeamMember.userId})::int` }).from(dimEnterpriseTeamMember),
+    db
+      .select({
+        licensedUsers: sql<number>`COUNT(DISTINCT ${dimUser.userId})::int`,
+        usersWithAssignedDate: sql<number>`COUNT(DISTINCT ${dimUser.userId}) FILTER (WHERE ${dimUser.licenseAssignedDate} IS NOT NULL)::int`,
+      })
+      .from(dimUser)
+      .where(eq(dimUser.isCurrent, true)),
+    enterpriseSlug
+      ? db
+          .select({ snapshotDate: factCopilotSeatAssignment.snapshotDate })
+          .from(factCopilotSeatAssignment)
+          .where(eq(factCopilotSeatAssignment.enterpriseSlug, enterpriseSlug))
+          .orderBy(desc(factCopilotSeatAssignment.snapshotDate), desc(factCopilotSeatAssignment.capturedAt))
+          .limit(1)
+      : Promise.resolve([] as Array<{ snapshotDate: string }>),
+    db
+      .select({
+        checkedAt: githubAccessCheckSnapshot.checkedAt,
+        tokenValid: githubAccessCheckSnapshot.tokenValid,
+        tokenLogin: githubAccessCheckSnapshot.tokenLogin,
+        tokenType: githubAccessCheckSnapshot.tokenType,
+        representativeOrg: githubAccessCheckSnapshot.representativeOrg,
+        representativeTeam: githubAccessCheckSnapshot.representativeTeam,
+        scopes: githubAccessCheckSnapshot.scopes,
+        checks: githubAccessCheckSnapshot.checks,
+      })
+      .from(githubAccessCheckSnapshot)
+      .orderBy(desc(githubAccessCheckSnapshot.checkedAt))
+      .limit(1),
+    db
+      .select({
+        activeUsers: sql<number>`COUNT(DISTINCT ${factCopilotUsageDaily.userId})::int`,
+        chatUsers: sql<number>`COUNT(DISTINCT ${factCopilotUsageDaily.userId}) FILTER (WHERE ${factCopilotUsageDaily.usedChat} = true)::int`,
+        cliUsers: sql<number>`COUNT(DISTINCT ${factCopilotUsageDaily.userId}) FILTER (WHERE ${factCopilotUsageDaily.usedCli} = true)::int`,
+        agentUsers: sql<number>`COUNT(DISTINCT ${factCopilotUsageDaily.userId}) FILTER (WHERE ${factCopilotUsageDaily.usedAgent} = true)::int`,
+        codingAgentUsers: sql<number>`COUNT(DISTINCT ${factCopilotUsageDaily.userId}) FILTER (WHERE ${factCopilotUsageDaily.usedCopilotCodingAgent} = true)::int`,
+        cloudAgentUsers: sql<number>`COUNT(DISTINCT ${factCopilotUsageDaily.userId}) FILTER (WHERE ${factCopilotUsageDaily.usedCopilotCloudAgent} = true)::int`,
+        codeReviewUsers: sql<number>`COUNT(DISTINCT ${factCopilotUsageDaily.userId}) FILTER (WHERE ${factCopilotUsageDaily.usedCodeReviewActive} = true OR ${factCopilotUsageDaily.usedCodeReviewPassive} = true)::int`,
+      })
+      .from(factCopilotUsageDaily)
+      .where(usageWindow(w)),
+    db
+      .select({
+        language: dimLanguage.languageName,
+        codeGenerated: sql<number>`COALESCE(SUM(${factUserLanguageDaily.codeGenerationActivityCount}), 0)::int`,
+        codeAccepted: sql<number>`COALESCE(SUM(${factUserLanguageDaily.codeAcceptanceActivityCount}), 0)::int`,
+      })
+      .from(factUserLanguageDaily)
+      .innerJoin(dimLanguage, eq(factUserLanguageDaily.languageId, dimLanguage.languageId))
+      .innerJoin(dimUser, eq(factUserLanguageDaily.userId, dimUser.userId))
+      .where(and(gte(factUserLanguageDaily.day, w.start), lte(factUserLanguageDaily.day, w.end), ...scopedUserConds))
+      .groupBy(dimLanguage.languageName)
+      .orderBy(sql`SUM(${factUserLanguageDaily.codeGenerationActivityCount}) DESC`)
+      .limit(8),
+    db
+      .select({
+        editor: dimIde.ideName,
+        interactions: sql<number>`COALESCE(SUM(${factUserIdeDaily.userInitiatedInteractionCount}), 0)::int`,
+        codeGenerated: sql<number>`COALESCE(SUM(${factUserIdeDaily.codeGenerationActivityCount}), 0)::int`,
+        codeAccepted: sql<number>`COALESCE(SUM(${factUserIdeDaily.codeAcceptanceActivityCount}), 0)::int`,
+      })
+      .from(factUserIdeDaily)
+      .innerJoin(dimIde, eq(factUserIdeDaily.ideId, dimIde.ideId))
+      .innerJoin(dimUser, eq(factUserIdeDaily.userId, dimUser.userId))
+      .where(and(gte(factUserIdeDaily.day, w.start), lte(factUserIdeDaily.day, w.end), ...scopedUserConds))
+      .groupBy(dimIde.ideName)
+      .orderBy(sql`SUM(${factUserIdeDaily.userInitiatedInteractionCount}) DESC`)
+      .limit(8),
+    db
+      .select({
+        model: dimModel.modelName,
+        interactions: sql<number>`COALESCE(SUM(${factUserModelDaily.userInitiatedInteractionCount}), 0)::int`,
+        codeGenerated: sql<number>`COALESCE(SUM(${factUserModelDaily.codeGenerationActivityCount}), 0)::int`,
+        codeAccepted: sql<number>`COALESCE(SUM(${factUserModelDaily.codeAcceptanceActivityCount}), 0)::int`,
+      })
+      .from(factUserModelDaily)
+      .innerJoin(dimModel, eq(factUserModelDaily.modelId, dimModel.modelId))
+      .innerJoin(dimUser, eq(factUserModelDaily.userId, dimUser.userId))
+      .where(and(gte(factUserModelDaily.day, w.start), lte(factUserModelDaily.day, w.end), ...scopedUserConds))
+      .groupBy(dimModel.modelName)
+      .orderBy(sql`SUM(${factUserModelDaily.userInitiatedInteractionCount}) DESC`)
+      .limit(8),
+  ]);
+
+  const latestSeatDate = latestSeatDateRows[0]?.snapshotDate ?? null;
+  const seatRows = latestSeatDate && enterpriseSlug
+    ? await db
+        .select({
+          assigneeLogin: factCopilotSeatAssignment.assigneeLogin,
+          planType: factCopilotSeatAssignment.planType,
+          assignmentMethod: factCopilotSeatAssignment.assignmentMethod,
+          organizationLogin: factCopilotSeatAssignment.organizationLogin,
+          assigningTeamSlug: factCopilotSeatAssignment.assigningTeamSlug,
+          pendingCancellationDate: factCopilotSeatAssignment.pendingCancellationDate,
+          lastActivityAt: factCopilotSeatAssignment.lastActivityAt,
+          lastActivityEditor: factCopilotSeatAssignment.lastActivityEditor,
+        })
+        .from(factCopilotSeatAssignment)
+        .where(
+          and(
+            eq(factCopilotSeatAssignment.enterpriseSlug, enterpriseSlug),
+            eq(factCopilotSeatAssignment.snapshotDate, latestSeatDate),
+          ),
+        )
+    : [];
+
+  const orgMemberMap = new Map(orgMemberRows.map((row) => [row.orgId, Number(row.members)]));
+  const dimUserOrgMap = new Map(dimUserOrgRows.map((row) => [row.orgId, Number(row.members)]));
+  const orgUsageMap = new Map(orgUsageRows.map((row) => [row.orgId, row]));
+  const orgScorecards = orgBaseRows
+    .map((org) => {
+      const memberCount = orgMemberMap.get(org.orgId) ?? dimUserOrgMap.get(org.orgId) ?? 0;
+      const usage = orgUsageMap.get(org.orgId);
+      const activeUsers = Number(usage?.activeUsers ?? 0);
+      const interactions = Number(usage?.interactions ?? 0);
+      const aiCreditsUsed = round(Number(usage?.aiCreditsUsed ?? 0), 2);
+      return {
+        orgId: org.orgId,
+        orgName: org.orgName,
+        githubOrgId: org.githubOrgId,
+        memberCount,
+        memberSource: orgMemberMap.has(org.orgId) ? "dim_org_member" : "dim_user_current",
+        activeUsers,
+        activeSharePct: pct(activeUsers, memberCount),
+        interactions,
+        interactionsPerActiveUser: activeUsers > 0 ? round(interactions / activeUsers, 1) : null,
+        aiCreditsUsed,
+        aiCreditsPerActiveUser: activeUsers > 0 ? round(aiCreditsUsed / activeUsers, 2) : null,
+      };
+    })
+    .sort((a, b) => b.activeUsers - a.activeUsers)
+    .slice(0, 12);
+
+  const licensedUsers = Number(licensedRows[0]?.licensedUsers ?? 0);
+  const usersWithAssignedDate = Number(licensedRows[0]?.usersWithAssignedDate ?? 0);
+  const activeUsers = orgScorecards.reduce((sum, org) => sum + org.activeUsers, 0);
+  const teamCount = teamRows.length;
+  const teamMembers = Number(teamMemberRows[0]?.members ?? 0);
+  const uniqueSeatAssignees = new Set(seatRows.map((row) => row.assigneeLogin));
+  const now = Date.now();
+  const inactiveSeatAssignees = new Set(
+    seatRows
+      .filter((row) => !row.lastActivityAt || now - new Date(row.lastActivityAt).getTime() > 30 * 86_400_000)
+      .map((row) => row.assigneeLogin),
+  );
+  const neverActiveSeatAssignees = new Set(seatRows.filter((row) => !row.lastActivityAt).map((row) => row.assigneeLogin));
+  const planCounts = seatRows.reduce<Record<string, number>>((acc, row) => {
+    acc[row.planType] = (acc[row.planType] ?? 0) + 1;
+    return acc;
+  }, {});
+  const assignmentMethodCounts = seatRows.reduce<Record<string, number>>((acc, row) => {
+    acc[row.assignmentMethod] = (acc[row.assignmentMethod] ?? 0) + 1;
+    return acc;
+  }, {});
+  const latestAccess = latestAccessRows[0] ?? null;
+  const latestChecks = Array.isArray(latestAccess?.checks)
+    ? (latestAccess.checks as Array<{ label?: string; status?: string; detail?: string }>)
+    : [];
+  const failedAccessChecks = latestChecks
+    .filter((check) => check.status && check.status !== "ok")
+    .map((check) => ({ label: check.label ?? "unknown", status: check.status ?? "unknown", detail: check.detail ?? "" }))
+    .slice(0, 8);
+  const featureUsage = featureUsageRows[0];
+  const featureActiveUsers = Number(featureUsage?.activeUsers ?? 0);
+
+  return {
+    enterprise: {
+      configuredSlug: enterpriseSlug,
+      storedEnterprises: enterpriseRows.map((e) => ({
+        enterpriseId: e.enterpriseId,
+        enterpriseSlug: e.enterpriseSlug,
+      })),
+    },
+    topology: {
+      orgsAnalyzed: orgBaseRows.length,
+      teamsSynced: teamCount,
+      enterpriseTeamMembersSynced: teamMembers,
+      licensedUsers,
+      activeUsers,
+      overallUtilizationPct: pct(activeUsers, licensedUsers),
+    },
+    orgScorecards,
+    seatAssignmentSignals: {
+      source: latestSeatDate
+        ? "Persisted fact_copilot_seat_assignment snapshot from the live GitHub Copilot seats API."
+        : "Fallback to dim_user + usage facts because no persisted seat assignment snapshot exists yet.",
+      latestSnapshotDate: latestSeatDate,
+      totalAssignments: seatRows.length,
+      uniqueAssignees: uniqueSeatAssignees.size,
+      licensedUsers,
+      activeUsers: latestSeatDate ? uniqueSeatAssignees.size - inactiveSeatAssignees.size : activeUsers,
+      idleSeatsApprox: latestSeatDate ? inactiveSeatAssignees.size : Math.max(0, licensedUsers - activeUsers),
+      neverActiveSeats: latestSeatDate ? neverActiveSeatAssignees.size : null,
+      idleSeatRatePct: latestSeatDate
+        ? pct(inactiveSeatAssignees.size, uniqueSeatAssignees.size)
+        : pct(Math.max(0, licensedUsers - activeUsers), licensedUsers),
+      pendingCancellationCount: latestSeatDate
+        ? seatRows.filter((row) => row.pendingCancellationDate).length
+        : null,
+      planCounts,
+      assignmentMethodCounts,
+      assignedViaTeamCount: assignmentMethodCounts.team ?? 0,
+      assignedViaOrganizationCount: assignmentMethodCounts.organization ?? 0,
+      usersWithLicenseAssignedDate: usersWithAssignedDate,
+      licenseAssignedDateCoveragePct: pct(usersWithAssignedDate, licensedUsers),
+      assignmentMethodAvailable: Boolean(latestSeatDate),
+      pendingCancellationAvailable: Boolean(latestSeatDate),
+      planTypeAvailable: Boolean(latestSeatDate),
+      lastActivityEditorAvailable: Boolean(latestSeatDate),
+    },
+    accessHealth: latestAccess
+      ? {
+          checkedAt: latestAccess.checkedAt,
+          tokenValid: latestAccess.tokenValid,
+          tokenLogin: latestAccess.tokenLogin,
+          tokenType: latestAccess.tokenType,
+          representativeOrg: latestAccess.representativeOrg,
+          representativeTeam: latestAccess.representativeTeam,
+          failedChecks: failedAccessChecks,
+          failedCheckCount: failedAccessChecks.length,
+        }
+      : null,
+    featureMix: {
+      activeUsers: featureActiveUsers,
+      userFeatureAdoption: {
+        chatUsers: Number(featureUsage?.chatUsers ?? 0),
+        chatSharePct: pct(Number(featureUsage?.chatUsers ?? 0), featureActiveUsers),
+        cliUsers: Number(featureUsage?.cliUsers ?? 0),
+        cliSharePct: pct(Number(featureUsage?.cliUsers ?? 0), featureActiveUsers),
+        agentUsers: Number(featureUsage?.agentUsers ?? 0),
+        agentSharePct: pct(Number(featureUsage?.agentUsers ?? 0), featureActiveUsers),
+        codingAgentUsers: Number(featureUsage?.codingAgentUsers ?? 0),
+        cloudAgentUsers: Number(featureUsage?.cloudAgentUsers ?? 0),
+        codeReviewUsers: Number(featureUsage?.codeReviewUsers ?? 0),
+        codeReviewSharePct: pct(Number(featureUsage?.codeReviewUsers ?? 0), featureActiveUsers),
+      },
+      topLanguages: languageRows.map((row) => ({
+        language: row.language,
+        codeGenerated: Number(row.codeGenerated),
+        codeAccepted: Number(row.codeAccepted),
+        acceptanceRate: Number(row.codeGenerated) > 0 ? round(Number(row.codeAccepted) / Number(row.codeGenerated), 3) : 0,
+      })),
+      topEditors: editorRows.map((row) => ({
+        editor: row.editor,
+        interactions: Number(row.interactions),
+        codeGenerated: Number(row.codeGenerated),
+        codeAccepted: Number(row.codeAccepted),
+        acceptanceRate: Number(row.codeGenerated) > 0 ? round(Number(row.codeAccepted) / Number(row.codeGenerated), 3) : 0,
+      })),
+      topModels: modelRows.map((row) => ({
+        model: row.model,
+        interactions: Number(row.interactions),
+        codeGenerated: Number(row.codeGenerated),
+        codeAccepted: Number(row.codeAccepted),
+        acceptanceRate: Number(row.codeGenerated) > 0 ? round(Number(row.codeAccepted) / Number(row.codeGenerated), 3) : 0,
+      })),
+    },
+    contextWarnings: [
+      ...(orgBaseRows.length === 0 ? ["No organizations are stored in dim_org."] : []),
+      ...(teamCount === 0 ? ["Enterprise teams have not been synced into dim_enterprise_team."] : []),
+      ...(!latestSeatDate ? ["No persisted Copilot seat assignment snapshot is available yet."] : []),
+      ...(!latestAccess ? ["No persisted GitHub access check snapshot is available yet."] : []),
+      ...(usersWithAssignedDate < licensedUsers ? ["Some licensed users do not have a license_assigned_date in dim_user."] : []),
+    ],
+  };
+}
+
+function withEnterpriseContext<T extends Record<string, unknown>>(
+  snapshot: T,
+  context: Record<string, unknown>,
+): T & { enterpriseContext: Record<string, unknown> } {
+  return { ...snapshot, enterpriseContext: context };
+}
+
 async function costLicenseSnapshot(w: InsightWindow) {
   const [licensed, active, spendByModel] = await Promise.all([
     db
@@ -81,14 +500,43 @@ async function costLicenseSnapshot(w: InsightWindow) {
   const activeUsers = active.length;
   const spend = spendByModel.map((r) => ({ model: r.model, netAmount: Number(r.netAmount) }));
   const totalNetSpend = spend.reduce((s, r) => s + r.netAmount, 0);
+  const idleSeats = Math.max(0, licensedUsers - activeUsers);
+  const concentration = spendConcentration(spend);
+  const utilizationPct = pct(activeUsers, licensedUsers);
 
   return {
     window: w,
     licensedUsers,
     activeUsers,
-    idleSeats: Math.max(0, licensedUsers - activeUsers),
+    idleSeats,
+    utilizationPct,
+    idleSeatRatePct: pct(idleSeats, licensedUsers),
     totalNetSpend: Number(totalNetSpend.toFixed(2)),
+    netSpendPerActiveUser:
+      activeUsers > 0 ? Number((totalNetSpend / activeUsers).toFixed(2)) : null,
+    spendConcentration: concentration,
     spendByModel: spend,
+    businessSignals: {
+      licenseRisk:
+        utilizationPct === null ? "unknown" : utilizationPct < 60 ? "high" : utilizationPct < 80 ? "medium" : "low",
+      spendConcentrationRisk:
+        (concentration.top3ModelSharePct ?? 0) >= 80 ? "high" : (concentration.top3ModelSharePct ?? 0) >= 60 ? "medium" : "low",
+      primaryOpportunity:
+        idleSeats > 0 ? "reclaim_or_reassign_idle_seats" : "optimize_high_spend_models",
+    },
+    dataQuality: dataQuality({
+      window: w,
+      sampleSize: licensedUsers,
+      hasCostData: totalNetSpend > 0,
+      evidence: [
+        { name: "licensed_users", present: licensedUsers > 0 },
+        { name: "active_users", present: activeUsers > 0 },
+        { name: "idle_seat_signal", present: licensedUsers > 0 },
+        { name: "spend_by_model", present: spend.length > 0 },
+        { name: "net_spend", present: totalNetSpend > 0 },
+      ],
+      warnings: licensedUsers === 0 ? ["No current licensed users found in dim_user."] : [],
+    }),
   };
 }
 
@@ -114,16 +562,52 @@ async function adoptionSnapshot(w: InsightWindow) {
     const p = Number(r.phase);
     counts.set(p, (counts.get(p) ?? 0) + 1);
   }
+  const totalClassifiedUsers = latest.length;
+  const codeFirstUsers = counts.get(1) ?? 0;
+  const agentFirstUsers = counts.get(2) ?? 0;
+  const multiAgentUsers = counts.get(3) ?? 0;
+  const advancedUsers = agentFirstUsers + multiAgentUsers;
+  const earlyOrNoCohortUsers = (counts.get(0) ?? 0) + codeFirstUsers;
+  const cohortRows = AI_ADOPTION_PHASES.map((p) => ({
+    phase: p,
+    key: AI_ADOPTION_PHASE_KEYS[p],
+    label: AI_ADOPTION_PHASE_LABELS[p],
+    users: counts.get(p) ?? 0,
+    sharePct: pct(counts.get(p) ?? 0, totalClassifiedUsers),
+  }));
+  const dominantCohort = [...cohortRows].sort((a, b) => b.users - a.users)[0] ?? null;
 
   return {
     window: w,
-    totalClassifiedUsers: latest.length,
-    cohorts: AI_ADOPTION_PHASES.map((p) => ({
-      phase: p,
-      key: AI_ADOPTION_PHASE_KEYS[p],
-      label: AI_ADOPTION_PHASE_LABELS[p],
-      users: counts.get(p) ?? 0,
-    })),
+    totalClassifiedUsers,
+    cohorts: cohortRows,
+    stageMix: {
+      earlyOrNoCohortUsers,
+      earlyOrNoCohortSharePct: pct(earlyOrNoCohortUsers, totalClassifiedUsers),
+      advancedUsers,
+      advancedSharePct: pct(advancedUsers, totalClassifiedUsers),
+      agentFirstOrMultiAgentUsers: advancedUsers,
+    },
+    businessSignals: {
+      dominantCohort: dominantCohort
+        ? { key: dominantCohort.key, label: dominantCohort.label, users: dominantCohort.users }
+        : null,
+      maturity:
+        totalClassifiedUsers === 0 ? "unknown" : (pct(advancedUsers, totalClassifiedUsers) ?? 0) >= 50 ? "advanced" : (pct(advancedUsers, totalClassifiedUsers) ?? 0) >= 20 ? "developing" : "early",
+      primaryEnablementFocus:
+        earlyOrNoCohortUsers >= advancedUsers ? "move_code_first_users_to_agent_workflows" : "scale_multi_agent_practices",
+    },
+    dataQuality: dataQuality({
+      window: w,
+      sampleSize: totalClassifiedUsers,
+      evidence: [
+        { name: "cohort_classifications", present: totalClassifiedUsers > 0 },
+        { name: "cohort_distribution", present: cohortRows.some((row) => row.users > 0) },
+        { name: "advanced_adoption_signal", present: advancedUsers > 0 },
+        { name: "dominant_cohort", present: Boolean(dominantCohort && dominantCohort.users > 0) },
+      ],
+      warnings: totalClassifiedUsers === 0 ? ["No AI adoption phase classifications were found for this window."] : [],
+    }),
   };
 }
 
@@ -310,6 +794,28 @@ async function executiveSnapshot(w: InsightWindow) {
     model: r.model,
     netAmount: Number(Number(r.netAmount).toFixed(2)),
   }));
+  const activeUsersChangePct = pctChange(usage.activeUsers, prevUsage.activeUsers);
+  const interactionsChangePct = pctChange(usage.interactions, prevUsage.interactions);
+  const linesOfCodeAddedChangePct = pctChange(usage.linesOfCodeAdded, prevUsage.linesOfCodeAdded);
+  const netSpendChangePct = pctChange(netSpend, prevNetSpend);
+  const prCreatedChangePct = pctChange(delivery.created, prevDelivery.created);
+  const prMergedChangePct = pctChange(delivery.merged, prevDelivery.merged);
+  const utilizationPct = pct(usage.activeUsers, licensedUsers);
+  const idleSeats = Math.max(0, licensedUsers - usage.activeUsers);
+  const cohortBreakdown = AI_ADOPTION_PHASES.map((p) => ({
+    phase: p,
+    key: AI_ADOPTION_PHASE_KEYS[p],
+    label: AI_ADOPTION_PHASE_LABELS[p],
+    users: counts.get(p) ?? 0,
+    sharePct: pct(counts.get(p) ?? 0, cohortRows.length),
+  }));
+  const advancedUsers = (counts.get(2) ?? 0) + (counts.get(3) ?? 0);
+  const costHasData = netSpend > 0 || topModelsBySpend.length > 0;
+  const deliveryHasData = delivery.created > 0 || delivery.merged > 0 || delivery.reviewed > 0;
+  const executiveWarnings = [
+    ...(prevUsage.activeUsers === 0 ? ["Previous-period active-user baseline is zero, so some trend percentages are unavailable."] : []),
+    ...(cohortRows.length === 0 ? ["No AI adoption cohort rows were available for this window."] : []),
+  ];
 
   return {
     window: w,
@@ -324,10 +830,10 @@ async function executiveSnapshot(w: InsightWindow) {
     activity: {
       activeUsers: usage.activeUsers,
       activeUsersPrev: prevUsage.activeUsers,
-      activeUsersChangePct: pctChange(usage.activeUsers, prevUsage.activeUsers),
+      activeUsersChangePct,
       interactions: usage.interactions,
       interactionsPrev: prevUsage.interactions,
-      interactionsChangePct: pctChange(usage.interactions, prevUsage.interactions),
+      interactionsChangePct,
       codeGenerated: usage.codeGenerated,
       codeAccepted: usage.codeAccepted,
       acceptanceRate: usage.acceptanceRate,
@@ -337,84 +843,147 @@ async function executiveSnapshot(w: InsightWindow) {
       ),
       linesOfCodeAdded: usage.linesOfCodeAdded,
       linesOfCodeAddedPrev: prevUsage.linesOfCodeAdded,
-      linesOfCodeAddedChangePct: pctChange(usage.linesOfCodeAdded, prevUsage.linesOfCodeAdded),
+      linesOfCodeAddedChangePct,
     },
     licensing: {
       licensedUsers,
       activeUsers: usage.activeUsers,
-      idleSeats: Math.max(0, licensedUsers - usage.activeUsers),
-      utilizationPct:
-        licensedUsers > 0 ? Number(((usage.activeUsers / licensedUsers) * 100).toFixed(1)) : null,
+      idleSeats,
+      utilizationPct,
     },
     cost: {
       netSpend: Number(netSpend.toFixed(2)),
       netSpendPrev: Number(prevNetSpend.toFixed(2)),
-      netSpendChangePct: pctChange(netSpend, prevNetSpend),
+      netSpendChangePct,
       spendPerActiveUser:
         usage.activeUsers > 0 ? Number((netSpend / usage.activeUsers).toFixed(2)) : null,
       topModelsBySpend,
     },
     delivery: {
       prCreated: delivery.created,
-      prCreatedChangePct: pctChange(delivery.created, prevDelivery.created),
+      prCreatedChangePct,
       prMerged: delivery.merged,
-      prMergedChangePct: pctChange(delivery.merged, prevDelivery.merged),
+      prMergedChangePct,
       prReviewed: delivery.reviewed,
       copilotAuthoredPrs: delivery.copilotAuthored,
+      copilotAuthoredSharePct: pct(delivery.copilotAuthored, delivery.created),
       copilotReviewedPrs: delivery.copilotReviewed,
+      copilotReviewedSharePct: pct(delivery.copilotReviewed, delivery.reviewed),
       copilotAppliedSuggestions: delivery.appliedSuggestions,
       avgMedianMinutesToMerge: delivery.avgMedianMinutesToMerge,
     },
     adoption: {
       totalClassifiedUsers: cohortRows.length,
-      cohorts: AI_ADOPTION_PHASES.map((p) => ({
-        phase: p,
-        key: AI_ADOPTION_PHASE_KEYS[p],
-        label: AI_ADOPTION_PHASE_LABELS[p],
-        users: counts.get(p) ?? 0,
-      })),
+      cohorts: cohortBreakdown,
+      advancedUsers,
+      advancedSharePct: pct(advancedUsers, cohortRows.length),
     },
     weeklyTrend: weeklyRows.map((r) => ({
       week: r.week,
       activeUsers: Number(r.activeUsers),
       interactions: Number(r.interactions),
     })),
+    businessSignals: {
+      activityTrend: trendLabel(activeUsersChangePct),
+      productivityTrend: trendLabel(linesOfCodeAddedChangePct),
+      spendTrend: trendLabel(netSpendChangePct),
+      deliveryTrend: trendLabel(prMergedChangePct),
+      adoptionMaturity:
+        cohortRows.length === 0 ? "unknown" : (pct(advancedUsers, cohortRows.length) ?? 0) >= 50 ? "advanced" : (pct(advancedUsers, cohortRows.length) ?? 0) >= 20 ? "developing" : "early",
+      topRisk:
+        idleSeats > usage.activeUsers ? "license_underutilization" : !deliveryHasData ? "missing_delivery_data" : netSpendChangePct !== null && netSpendChangePct > 25 ? "rapid_spend_growth" : "none_obvious",
+      recommendedExecutiveDecision:
+        idleSeats > 0 ? "reassign_or_reclaim_idle_seats_before_expanding" : (pct(advancedUsers, cohortRows.length) ?? 0) < 20 ? "fund_targeted_agent_enablement" : "scale_proven_adoption_patterns",
+    },
+    dataQuality: dataQuality({
+      window: w,
+      sampleSize: usage.activeUsers,
+      hasPreviousPeriod: prevUsage.activeUsers > 0,
+      hasCostData: costHasData,
+      hasDeliveryData: deliveryHasData,
+      evidence: [
+        { name: "engagement_snapshot", present: dau != null || mau != null },
+        { name: "activity_totals", present: usage.activeUsers > 0 || usage.interactions > 0 },
+        { name: "license_totals", present: licensedUsers > 0 },
+        { name: "adoption_cohorts", present: cohortRows.length > 0 },
+        { name: "weekly_trend", present: weeklyRows.length > 1 },
+      ],
+      warnings: executiveWarnings,
+    }),
   };
 }
 
 async function deliverySnapshot(w: InsightWindow) {
-  const rows = await db
-    .select({
-      created: sql<number>`COALESCE(SUM(${factOrgAggregateDaily.prTotalCreated}), 0)`,
-      merged: sql<number>`COALESCE(SUM(${factOrgAggregateDaily.prTotalMerged}), 0)`,
-      reviewed: sql<number>`COALESCE(SUM(${factOrgAggregateDaily.prTotalReviewed}), 0)`,
-      copilotAuthored: sql<number>`COALESCE(SUM(${factOrgAggregateDaily.prTotalCreatedByCopilot}), 0)`,
-      copilotReviewed: sql<number>`COALESCE(SUM(${factOrgAggregateDaily.prTotalReviewedByCopilot}), 0)`,
-      suggestions: sql<number>`COALESCE(SUM(${factOrgAggregateDaily.prTotalCopilotSuggestions}), 0)`,
-      appliedSuggestions: sql<number>`COALESCE(SUM(${factOrgAggregateDaily.prTotalCopilotAppliedSuggestions}), 0)`,
-      avgMedianMinutesToMerge: sql<number>`AVG(${factOrgAggregateDaily.prMedianMinutesToMerge})`,
-    })
-    .from(factOrgAggregateDaily)
-    .where(
-      and(
-        gte(factOrgAggregateDaily.day, w.start),
-        lte(factOrgAggregateDaily.day, w.end),
-        eq(factOrgAggregateDaily.scope, "enterprise"),
+  const prev = previousWindow(w);
+  const [rows, prevDelivery] = await Promise.all([
+    db
+      .select({
+        created: sql<number>`COALESCE(SUM(${factOrgAggregateDaily.prTotalCreated}), 0)`,
+        merged: sql<number>`COALESCE(SUM(${factOrgAggregateDaily.prTotalMerged}), 0)`,
+        reviewed: sql<number>`COALESCE(SUM(${factOrgAggregateDaily.prTotalReviewed}), 0)`,
+        copilotAuthored: sql<number>`COALESCE(SUM(${factOrgAggregateDaily.prTotalCreatedByCopilot}), 0)`,
+        copilotReviewed: sql<number>`COALESCE(SUM(${factOrgAggregateDaily.prTotalReviewedByCopilot}), 0)`,
+        suggestions: sql<number>`COALESCE(SUM(${factOrgAggregateDaily.prTotalCopilotSuggestions}), 0)`,
+        appliedSuggestions: sql<number>`COALESCE(SUM(${factOrgAggregateDaily.prTotalCopilotAppliedSuggestions}), 0)`,
+        avgMedianMinutesToMerge: sql<number>`AVG(${factOrgAggregateDaily.prMedianMinutesToMerge})`,
+      })
+      .from(factOrgAggregateDaily)
+      .where(
+        and(
+          gte(factOrgAggregateDaily.day, w.start),
+          lte(factOrgAggregateDaily.day, w.end),
+          eq(factOrgAggregateDaily.scope, "enterprise"),
+        ),
       ),
-    );
+    deliveryTotals(prev),
+  ]);
 
   const r = rows[0];
+  const prCreated = Number(r?.created ?? 0);
+  const prMerged = Number(r?.merged ?? 0);
+  const prReviewed = Number(r?.reviewed ?? 0);
+  const copilotAuthoredPrs = Number(r?.copilotAuthored ?? 0);
+  const copilotReviewedPrs = Number(r?.copilotReviewed ?? 0);
+  const copilotSuggestions = Number(r?.suggestions ?? 0);
+  const copilotAppliedSuggestions = Number(r?.appliedSuggestions ?? 0);
+  const prMergedChangePct = pctChange(prMerged, prevDelivery.merged);
+  const deliveryHasData = prCreated > 0 || prMerged > 0 || prReviewed > 0;
   return {
     window: w,
-    prCreated: Number(r?.created ?? 0),
-    prMerged: Number(r?.merged ?? 0),
-    prReviewed: Number(r?.reviewed ?? 0),
-    copilotAuthoredPrs: Number(r?.copilotAuthored ?? 0),
-    copilotReviewedPrs: Number(r?.copilotReviewed ?? 0),
-    copilotSuggestions: Number(r?.suggestions ?? 0),
-    copilotAppliedSuggestions: Number(r?.appliedSuggestions ?? 0),
+    previousWindow: prev,
+    prCreated,
+    prCreatedChangePct: pctChange(prCreated, prevDelivery.created),
+    prMerged,
+    prMergedChangePct,
+    prReviewed,
+    copilotAuthoredPrs,
+    copilotAuthoredSharePct: pct(copilotAuthoredPrs, prCreated),
+    copilotReviewedPrs,
+    copilotReviewedSharePct: pct(copilotReviewedPrs, prReviewed),
+    copilotSuggestions,
+    copilotAppliedSuggestions,
+    suggestionApplicationRatePct: pct(copilotAppliedSuggestions, copilotSuggestions),
     avgMedianMinutesToMerge:
       r?.avgMedianMinutesToMerge != null ? Number(Number(r.avgMedianMinutesToMerge).toFixed(1)) : null,
+    businessSignals: {
+      deliveryTrend: trendLabel(prMergedChangePct),
+      copilotContribution:
+        (pct(copilotAuthoredPrs + copilotReviewedPrs, prCreated + prReviewed) ?? 0) >= 25 ? "strong" : (pct(copilotAuthoredPrs + copilotReviewedPrs, prCreated + prReviewed) ?? 0) >= 10 ? "mixed" : "weak",
+      primaryCaveat: deliveryHasData ? "correlation_not_causation" : "missing_delivery_data",
+    },
+    dataQuality: dataQuality({
+      window: w,
+      sampleSize: prCreated + prReviewed,
+      hasPreviousPeriod: prevDelivery.created > 0 || prevDelivery.merged > 0,
+      hasDeliveryData: deliveryHasData,
+      evidence: [
+        { name: "pr_created", present: prCreated > 0 },
+        { name: "pr_reviewed", present: prReviewed > 0 },
+        { name: "copilot_authored_or_reviewed_prs", present: copilotAuthoredPrs > 0 || copilotReviewedPrs > 0 },
+        { name: "copilot_suggestions", present: copilotSuggestions > 0 },
+        { name: "time_to_merge", present: r?.avgMedianMinutesToMerge != null },
+      ],
+    }),
   };
 }
 
@@ -460,6 +1029,22 @@ async function roiForecastSnapshot(w: InsightWindow) {
 
   const licensedUsers = Number(licensedRows[0]?.n ?? 0);
   const avgDailyNetSpend = Number((netSpend / daysInWindow).toFixed(2));
+  const assumptions = {
+    minutesSavedPerAcceptedSuggestion: 1.5,
+    developerHourlyCostUsd: 75,
+    monthlyCostPerSeatUsd: 19,
+    note: "Editable default assumptions — adjust to your organization's actuals. Any productivity-value or ROI figure derived from these is an estimate, not a measured metric.",
+  };
+  const estimatedHoursSaved = round((usage.codeAccepted * assumptions.minutesSavedPerAcceptedSuggestion) / 60, 2);
+  const estimatedValueUsd = round(estimatedHoursSaved * assumptions.developerHourlyCostUsd, 2);
+  const seatCostUsd = round(licensedUsers * assumptions.monthlyCostPerSeatUsd, 2);
+  const fullyLoadedCostUsd = round(seatCostUsd + netSpend, 2);
+  const netValueUsd = round(estimatedValueUsd - fullyLoadedCostUsd, 2);
+  const roiRatio = fullyLoadedCostUsd > 0 ? round(estimatedValueUsd / fullyLoadedCostUsd, 2) : null;
+  const breakEvenHours = assumptions.developerHourlyCostUsd > 0
+    ? round(fullyLoadedCostUsd / assumptions.developerHourlyCostUsd, 2)
+    : null;
+  const netSpendChangePct = pctChange(netSpend, prevNetSpend);
 
   return {
     window: w,
@@ -491,18 +1076,49 @@ async function roiForecastSnapshot(w: InsightWindow) {
       netSpendChangePct: pctChange(netSpend, prevNetSpend),
       avgDailyNetSpend,
       projected30DaySpend: Number((avgDailyNetSpend * 30).toFixed(2)),
+      projected90DaySpend: Number((avgDailyNetSpend * 90).toFixed(2)),
       projectedAnnualSpend: Number((avgDailyNetSpend * 365).toFixed(2)),
       weeklyNetSpend: weeklySpendRows.map((r) => ({
         week: r.week,
         netSpend: Number(Number(r.net).toFixed(2)),
       })),
     },
-    assumptions: {
-      minutesSavedPerAcceptedSuggestion: 1.5,
-      developerHourlyCostUsd: 75,
-      monthlyCostPerSeatUsd: 19,
-      note: "Editable default assumptions — adjust to your organization's actuals. Any productivity-value or ROI figure derived from these is an estimate, not a measured metric.",
+    assumptions,
+    computedEstimates: {
+      estimatedHoursSaved,
+      estimatedValueUsd,
+      seatCostUsd,
+      aiCreditNetSpendUsd: Number(netSpend.toFixed(2)),
+      fullyLoadedCostUsd,
+      netValueUsd,
+      roiRatio,
+      breakEvenHours,
+      idleSeatCostUsd: round(Math.max(0, licensedUsers - usage.activeUsers) * assumptions.monthlyCostPerSeatUsd, 2),
     },
+    businessSignals: {
+      roiJudgment:
+        roiRatio === null ? "insufficient_cost_data" : roiRatio >= 2 ? "strong" : roiRatio >= 1 ? "positive_but_watch_cost" : "negative_or_unproven",
+      spendTrend: trendLabel(netSpendChangePct),
+      forecastRisk:
+        netSpendChangePct !== null && netSpendChangePct > 25 ? "high" : netSpendChangePct !== null && netSpendChangePct > 10 ? "medium" : "low",
+      primaryAction:
+        Math.max(0, licensedUsers - usage.activeUsers) > 0 ? "reduce_idle_seat_cost" : "watch_ai_credit_run_rate",
+    },
+    dataQuality: dataQuality({
+      window: w,
+      sampleSize: usage.activeUsers,
+      hasPreviousPeriod: prevUsage.activeUsers > 0 || prevNetSpend > 0,
+      hasCostData: netSpend > 0 || licensedUsers > 0,
+      hasDeliveryData: delivery.created > 0 || delivery.reviewed > 0,
+      evidence: [
+        { name: "accepted_code_activity", present: usage.codeAccepted > 0 },
+        { name: "license_cost_basis", present: licensedUsers > 0 },
+        { name: "ai_credit_spend", present: netSpend > 0 },
+        { name: "weekly_spend_series", present: weeklySpendRows.length > 1 },
+        { name: "delivery_supporting_signal", present: delivery.copilotAuthored > 0 || delivery.copilotReviewed > 0 },
+      ],
+      warnings: usage.codeAccepted === 0 ? ["No accepted-code activity was found, so productivity-value estimates may be zero."] : [],
+    }),
   };
 }
 
@@ -547,12 +1163,14 @@ async function teamScorecardsSnapshot(w: InsightWindow) {
     .innerJoin(dimEnterpriseTeam, eq(dimEnterpriseTeam.teamId, dimEnterpriseTeamMember.teamId))
     .groupBy(dimEnterpriseTeam.teamId, dimEnterpriseTeam.teamName);
 
-  const teams = teamRows
+  const baseTeams = teamRows
     .map((r) => {
       const rosterSize = rosterMap.get(r.teamId) ?? Number(r.activeMembers);
       const activeMembers = Number(r.activeMembers);
       const codeGenerated = Number(r.codeGenerated);
       const codeAccepted = Number(r.codeAccepted);
+      const creditsUsed = Number(Number(r.creditsUsed).toFixed(2));
+      const interactions = Number(r.interactions);
       return {
         team: r.teamName,
         rosterSize,
@@ -560,9 +1178,48 @@ async function teamScorecardsSnapshot(w: InsightWindow) {
         utilizationPct:
           rosterSize > 0 ? Number(((activeMembers / rosterSize) * 100).toFixed(1)) : null,
         agentAdopters: Number(r.agentAdopters),
-        creditsUsed: Number(Number(r.creditsUsed).toFixed(2)),
-        interactions: Number(r.interactions),
+        agentAdoptionSharePct: pct(Number(r.agentAdopters), activeMembers),
+        creditsUsed,
+        creditsPerActiveMember: activeMembers > 0 ? round(creditsUsed / activeMembers, 2) : null,
+        creditsPerInteraction: interactions > 0 ? round(creditsUsed / interactions, 4) : null,
+        interactions,
         acceptanceRate: codeGenerated > 0 ? Number((codeAccepted / codeGenerated).toFixed(3)) : 0,
+      };
+    });
+
+  const medianUtilizationPct = median(baseTeams.map((t) => t.utilizationPct));
+  const medianAcceptanceRate = median(baseTeams.map((t) => t.acceptanceRate));
+  const medianCreditsPerActiveMember = median(baseTeams.map((t) => t.creditsPerActiveMember));
+  const teams = baseTeams
+    .map((team) => {
+      const utilization = team.utilizationPct ?? 0;
+      const acceptance = team.acceptanceRate;
+      const creditsPerMember = team.creditsPerActiveMember ?? 0;
+      const highUtilization = medianUtilizationPct !== null && utilization >= medianUtilizationPct;
+      const highAcceptance = medianAcceptanceRate !== null && acceptance >= medianAcceptanceRate;
+      const highCost = medianCreditsPerActiveMember !== null && creditsPerMember > medianCreditsPerActiveMember * 1.5;
+      return {
+        ...team,
+        segment:
+          highUtilization && highAcceptance && !highCost
+            ? "leader"
+            : highCost && !highAcceptance
+              ? "cost_watch"
+              : utilization < 40
+                ? "underutilized"
+                : "enablement_candidate",
+        benchmark: {
+          utilizationVsMedianPct:
+            medianUtilizationPct !== null && team.utilizationPct !== null
+              ? round(team.utilizationPct - medianUtilizationPct, 1)
+              : null,
+          acceptanceVsMedianPoints:
+            medianAcceptanceRate !== null ? round((team.acceptanceRate - medianAcceptanceRate) * 100, 1) : null,
+          creditsPerActiveMemberVsMedian:
+            medianCreditsPerActiveMember !== null && team.creditsPerActiveMember !== null
+              ? round(team.creditsPerActiveMember - medianCreditsPerActiveMember, 2)
+              : null,
+        },
       };
     })
     .sort((a, b) => b.creditsUsed - a.creditsUsed)
@@ -570,29 +1227,62 @@ async function teamScorecardsSnapshot(w: InsightWindow) {
 
   return {
     window: w,
-    teamsAnalyzed: teams.length,
+    teamsAnalyzed: baseTeams.length,
+    benchmarks: {
+      medianUtilizationPct,
+      medianAcceptanceRate,
+      medianCreditsPerActiveMember,
+    },
     teams,
+    businessSignals: {
+      leaders: teams.filter((t) => t.segment === "leader").slice(0, 3).map((t) => t.team),
+      costWatchTeams: teams.filter((t) => t.segment === "cost_watch").slice(0, 3).map((t) => t.team),
+      underutilizedTeams: teams.filter((t) => t.segment === "underutilized").slice(0, 3).map((t) => t.team),
+    },
+    dataQuality: dataQuality({
+      window: w,
+      sampleSize: baseTeams.length,
+      hasTeamData: rosterRows.length > 0,
+      hasCostData: baseTeams.some((t) => t.creditsUsed > 0),
+      evidence: [
+        { name: "team_rosters", present: rosterRows.length > 0 },
+        { name: "team_activity", present: baseTeams.some((t) => t.activeMembers > 0) },
+        { name: "team_acceptance", present: baseTeams.some((t) => t.acceptanceRate > 0) },
+        { name: "team_ai_credit_usage", present: baseTeams.some((t) => t.creditsUsed > 0) },
+        { name: "benchmark_medians", present: medianUtilizationPct !== null && medianAcceptanceRate !== null },
+      ],
+      warnings: rosterRows.length === 0 ? ["Enterprise team rosters have not been synced."] : [],
+    }),
   };
 }
 
 /** Compute the grounded metric snapshot for a given insight kind. */
 export async function getMetricSnapshot(kind: MetricKind, w: InsightWindow) {
+  const context = await enterpriseContext(w);
+  let snapshot: Record<string, unknown>;
   switch (kind) {
     case "cost_license":
-      return costLicenseSnapshot(w);
+      snapshot = await costLicenseSnapshot(w);
+      break;
     case "adoption":
-      return adoptionSnapshot(w);
+      snapshot = await adoptionSnapshot(w);
+      break;
     case "executive":
-      return executiveSnapshot(w);
+      snapshot = await executiveSnapshot(w);
+      break;
     case "delivery":
-      return deliverySnapshot(w);
+      snapshot = await deliverySnapshot(w);
+      break;
     case "roi_forecast":
-      return roiForecastSnapshot(w);
+      snapshot = await roiForecastSnapshot(w);
+      break;
     case "team_scorecards":
-      return teamScorecardsSnapshot(w);
+      snapshot = await teamScorecardsSnapshot(w);
+      break;
     default: {
       const _exhaustive: never = kind;
       throw new Error(`Unknown metric kind: ${String(_exhaustive)}`);
     }
   }
+  return withEnterpriseContext(snapshot, context);
 }
