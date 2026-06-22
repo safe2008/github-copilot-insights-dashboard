@@ -210,6 +210,9 @@ export const fr: TranslationKeys = {
     ar: "العربية",
     es: "Español",
     fr: "Français",
+    de: "Deutsch",
+    hi: "हिन्दी",
+    it: "Italiano",
   },
   nav: {
     copilotUsage: "Utilisation Copilot",

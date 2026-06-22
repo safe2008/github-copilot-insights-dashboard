@@ -3,6 +3,9 @@ import { en } from "@/lib/i18n/translations/en";
 import { ar } from "@/lib/i18n/translations/ar";
 import { es } from "@/lib/i18n/translations/es";
 import { fr } from "@/lib/i18n/translations/fr";
+import { de } from "@/lib/i18n/translations/de";
+import { hi } from "@/lib/i18n/translations/hi";
+import { it as italian } from "@/lib/i18n/translations/it";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -38,6 +41,9 @@ const locales: Array<[string, AnyRecord]> = [
   ["ar", ar],
   ["es", es],
   ["fr", fr],
+  ["de", de],
+  ["hi", hi],
+  ["it", italian],
 ];
 
 describe("i18n translation parity", () => {
