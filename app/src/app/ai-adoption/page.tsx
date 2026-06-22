@@ -12,6 +12,8 @@ import { ReportFilters, DataSourceBanner, formatDateRangeLabel, type FilterState
 import { ConfigurationBanner } from "@/components/layout/configuration-banner";
 import { PageHeader } from "@/components/layout/page-header";
 import { ReportBanner } from "@/components/layout/report-banner";
+import { AiInsightPanel } from "@/components/ai/insight-panel";
+import { Layers } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 
 /* ── Types ── */
@@ -34,6 +36,8 @@ interface PerPhaseRow {
   avgCodeAccepted: number;
   avgLocAdded: number;
   avgLocDeleted: number;
+  avgAiCredits: number;
+  totalAiCredits: number;
 }
 
 interface AiAdoptionData {
@@ -192,6 +196,18 @@ export default function AiAdoptionPage() {
       <DataSourceBanner />
       <ReportBanner title={t("aiAdoption.aboutTitle")} body={t("aiAdoption.aboutBody")} />
 
+      {appliedFilters && (
+        <AiInsightPanel
+          kind="adoption"
+          title={t("aiAnalyst.adoption")}
+          description={t("aiAnalyst.adoptionDesc")}
+          icon={Layers}
+          start={appliedFilters.startDate}
+          end={appliedFilters.endDate}
+          orgId={/^\d+$/.test(appliedFilters.orgId) ? Number(appliedFilters.orgId) : undefined}
+        />
+      )}
+
       {loading && !data ? (
         <LoadingSpinner message={t("aiAdoption.loading")} />
       ) : !data || data.kpis.classifiedUsers === 0 ? (
@@ -250,6 +266,7 @@ export default function AiAdoptionPage() {
                 { key: "avgCodeGenerated", header: t("aiAdoption.avgCodeGenerated"), align: "right", render: (value: unknown) => Number(value).toLocaleString() },
                 { key: "avgCodeAccepted", header: t("aiAdoption.avgCodeAccepted"), align: "right", render: (value: unknown) => Number(value).toLocaleString() },
                 { key: "avgLocAdded", header: t("aiAdoption.avgLocAdded"), align: "right", render: (value: unknown) => Number(value).toLocaleString() },
+                { key: "avgAiCredits", header: t("aiAdoption.avgAiCredits"), align: "right", render: (value: unknown) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 }) },
               ]}
               data={(data?.perPhaseMetrics ?? []) as unknown as Record<string, unknown>[]}
               emptyMessage={t("common.noResults")}

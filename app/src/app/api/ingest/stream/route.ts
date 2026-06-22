@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { getGitHubConfig, getSyncScopeConfig } from "@/lib/db/settings";
 import { ingestCopilotUsage } from "@/lib/etl/ingest";
+import { syncEnterpriseContext } from "@/lib/etl/enterprise-context";
 import { safeErrorMessage } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +46,20 @@ export async function POST(request: NextRequest) {
           },
         });
 
-        send("done", JSON.stringify(result));
+        send("log", `[${new Date().toISOString()}] Enterprise context sync started`);
+        const enterpriseContext = await syncEnterpriseContext({ enterpriseSlug: slug, token });
+        const seatsLabel = enterpriseContext.seats.status === "success"
+          ? `${enterpriseContext.seats.assignmentsSynced}`
+          : `skipped (${enterpriseContext.seats.error})`;
+        const orgMembersLabel = enterpriseContext.orgMembers.status === "success"
+          ? `${enterpriseContext.orgMembers.membersSynced}`
+          : `skipped (${enterpriseContext.orgMembers.error})`;
+        send(
+          "log",
+          `[${new Date().toISOString()}] Enterprise context sync complete — seats: ${seatsLabel}, org members: ${orgMembersLabel}`,
+        );
+
+        send("done", JSON.stringify({ ...result, enterpriseContext }));
       } catch (err) {
         const message = safeErrorMessage(err, "Ingestion failed");
         send("error", message);

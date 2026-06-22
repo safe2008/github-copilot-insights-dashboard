@@ -5,15 +5,21 @@ import { en } from "./translations/en";
 import { ar } from "./translations/ar";
 import { es } from "./translations/es";
 import { fr } from "./translations/fr";
+import { de } from "./translations/de";
+import { hi } from "./translations/hi";
+import { it } from "./translations/it";
 import type { TranslationKeys } from "./translations/en";
 
-export type Locale = "en" | "ar" | "es" | "fr";
+export type Locale = "en" | "ar" | "es" | "fr" | "de" | "hi" | "it";
 
 const LOCALES: Record<Locale, { label: string; dir: "ltr" | "rtl"; translations: TranslationKeys }> = {
   en: { label: "English", dir: "ltr", translations: en },
   ar: { label: "العربية", dir: "rtl", translations: ar },
   es: { label: "Español", dir: "ltr", translations: es },
   fr: { label: "Français", dir: "ltr", translations: fr },
+  de: { label: "Deutsch", dir: "ltr", translations: de },
+  hi: { label: "हिन्दी", dir: "ltr", translations: hi },
+  it: { label: "Italiano", dir: "ltr", translations: it },
 };
 
 interface LocaleContextValue {

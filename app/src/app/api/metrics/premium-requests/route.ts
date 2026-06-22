@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getGitHubConfig } from "@/lib/db/settings";
-import { resolveDisplayNames, formatUserLabel } from "@/lib/github/resolve-display-names";
+import { resolveUserNames } from "@/lib/github/resolve-display-names";
 import { getModelDisplayName } from "@/lib/utils/model-display-names";
 import { safeErrorMessage } from "@/lib/auth";
 
@@ -298,7 +298,7 @@ export async function GET(request: NextRequest) {
 
     // 6. Resolve display names for users
     const userLogins = Array.from(new Set([...perUserMap.keys(), ...filterOptions.users]));
-    const displayNameMap = await resolveDisplayNames(userLogins, token);
+    const names = await resolveUserNames(userLogins, token);
 
     const perModelBreakdown = Array.from(perModelMap.values())
       .map((m) => ({ ...m, sku: getModelDisplayName(m.sku) }))
@@ -306,7 +306,7 @@ export async function GET(request: NextRequest) {
     const perUserBreakdown = Array.from(perUserMap.values())
       .map((u) => ({
         ...u,
-        displayLabel: formatUserLabel(u.user, displayNameMap),
+        displayLabel: names.label(u.user),
       }))
       .sort((a, b) => b.grossQuantity - a.grossQuantity);
     const perOrgBreakdown = Array.from(perOrgMap.values())
@@ -381,7 +381,7 @@ export async function GET(request: NextRequest) {
           orgs: filterOptions.orgs,
           users: filterOptions.users.map((login) => ({
             login,
-            displayLabel: formatUserLabel(login, displayNameMap),
+            displayLabel: names.label(login),
           })),
           teams: filterOptions.teams,
         },

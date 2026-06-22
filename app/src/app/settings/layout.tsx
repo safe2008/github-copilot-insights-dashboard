@@ -3,15 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Settings, Database, ScrollText, LogOut, Info, DatabaseZap } from "lucide-react";
+import { Settings, Database, ScrollText, LogOut, Info, DatabaseZap, Sparkles } from "lucide-react";
 import { AdminGate } from "@/components/auth/admin-gate";
+import { useTranslation } from "@/lib/i18n/locale-provider";
 
 const tabs = [
-  { label: "Configuration", href: "/settings", icon: Settings },
-  { label: "Data Sync", href: "/settings/data-sync", icon: Database },
-  { label: "Migrations", href: "/settings/migrations", icon: DatabaseZap },
-  { label: "Audit Log", href: "/settings/audit-log", icon: ScrollText },
-  { label: "App Info", href: "/settings/app-info", icon: Info },
+  { labelKey: "settings.configuration", href: "/settings", icon: Settings },
+  { labelKey: "settings.dataSync", href: "/settings/data-sync", icon: Database },
+  { labelKey: "settings.aiAnalyst", href: "/settings/ai-analyst", icon: Sparkles },
+  { labelKey: "settings.migrations", href: "/settings/migrations", icon: DatabaseZap },
+  { labelKey: "settings.auditLog", href: "/settings/audit-log", icon: ScrollText },
+  { labelKey: "settings.appInfo", href: "/settings/app-info", icon: Info },
 ];
 
 export default function SettingsLayout({
@@ -20,14 +22,15 @@ export default function SettingsLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { t } = useTranslation();
 
   return (
     <AdminGate>
       <div className="space-y-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Settings</h1>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{t("settings.title")}</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Manage your GitHub connection, sync schedule, and data ingestion.
+            {t("settings.subtitle")}
           </p>
         </div>
 
@@ -52,7 +55,7 @@ export default function SettingsLayout({
                   )}
                 >
                   <Icon className="h-4 w-4" />
-                  {tab.label}
+                  {t(tab.labelKey)}
                 </Link>
               );
             })}
@@ -66,7 +69,7 @@ export default function SettingsLayout({
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
           >
             <LogOut className="h-4 w-4" />
-            Admin Sign Out
+            {t("settings.adminSignOut")}
           </button>
         </div>
 

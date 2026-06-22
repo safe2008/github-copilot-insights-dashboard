@@ -8,22 +8,31 @@ import {
   CreditCard,
   GitPullRequest,
   Layers,
-  Sparkles,
+  Gem,
   Coins,
   Contact,
   Network,
   ArrowRight,
   Code,
+  Sparkles,
 } from "lucide-react";
 import { AgentIcon } from "@/components/icons/agent-icon";
 import { CliIcon } from "@/components/icons/cli-icon";
 import { useTranslation } from "@/lib/i18n/locale-provider";
 import { ConfigurationBanner } from "@/components/layout/configuration-banner";
+import { Reveal } from "@/components/ui/reveal";
 
 export default function LandingPage() {
   const { t } = useTranslation();
 
   const sections = [
+    {
+      title: t("aiAnalyst.title"),
+      description: t("aiAnalyst.subtitle"),
+      href: "/ai-analyst",
+      icon: Sparkles,
+      color: "text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400",
+    },
     {
       title: t("landing.copilotUsage"),
       description: t("landing.copilotUsageDesc"),
@@ -77,7 +86,7 @@ export default function LandingPage() {
       title: t("landing.premiumRequests"),
       description: t("landing.premiumRequestsDesc"),
       href: "/premium-requests",
-      icon: Sparkles,
+      icon: Gem,
       color: "text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400",
     },
     {
@@ -114,7 +123,7 @@ export default function LandingPage() {
     <div className="mx-auto max-w-5xl space-y-10 py-8">
       <ConfigurationBanner />
       {/* Hero */}
-      <div className="text-center">
+      <Reveal className="text-center">
         <div className="mb-4 flex justify-center">
           <Image
             src="/copilot-icon.svg"
@@ -137,33 +146,33 @@ export default function LandingPage() {
           {t("landing.viewCopilotUsage")}
           <ArrowRight className="h-4 w-4" />
         </Link>
-      </div>
+      </Reveal>
 
       {/* Section Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <Reveal stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {sections.map((s) => {
           const Icon = s.icon;
           return (
             <Link
               key={s.href}
               href={s.href}
-              className="group rounded-lg border border-gray-200 bg-white p-5 transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-800"
+              className="group rounded-lg border border-gray-200 bg-white p-4 transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-800"
             >
-              <div
-                className={`mb-3 inline-flex rounded-lg p-2.5 ${s.color}`}
-              >
-                <Icon className="h-5 w-5" />
+              <div className="flex items-center gap-3">
+                <div className={`inline-flex shrink-0 rounded-lg p-2.5 ${s.color}`}>
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h2 className="min-w-0 text-sm font-semibold text-gray-900 group-hover:text-blue-600 dark:text-gray-100 dark:group-hover:text-blue-400">
+                  {s.title}
+                </h2>
               </div>
-              <h2 className="text-sm font-semibold text-gray-900 group-hover:text-blue-600 dark:text-gray-100 dark:group-hover:text-blue-400">
-                {s.title}
-              </h2>
               <p className="mt-1 text-xs text-gray-500 leading-relaxed dark:text-gray-400">
                 {s.description}
               </p>
             </Link>
           );
         })}
-      </div>
+      </Reveal>
 
       {/* Data source note */}
       <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-center text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300">

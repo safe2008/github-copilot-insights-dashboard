@@ -10,6 +10,8 @@ import { ReportFilters, DataSourceBanner } from "@/components/layout/report-filt
 import type { FilterState, DataRange } from "@/components/layout/report-filters";
 import { PageHeader } from "@/components/layout/page-header";
 import { ReportBanner } from "@/components/layout/report-banner";
+import { AiInsightPanel } from "@/components/ai/insight-panel";
+import { GitPullRequest } from "lucide-react";
 import { useTranslation } from "@/lib/i18n/locale-provider";
 import { useChartOptions } from "@/lib/theme/chart-theme";
 import { ConfigurationBanner } from "@/components/layout/configuration-banner";
@@ -103,11 +105,13 @@ export default function PullRequestsPage() {
   const [data, setData] = useState<PRData | null>(null);
   const [loading, setLoading] = useState(true);
   const [dataRange, setDataRange] = useState<DataRange | null>(null);
+  const [appliedFilters, setAppliedFilters] = useState<FilterState | null>(null);
   const { ref: reportRef, ExportButton: PdfButton } = usePdfExport("copilot-pull-requests");
   const { t } = useTranslation();
   const { commonOptions, doughnutOptions, legendPreset } = useChartOptions();
 
   const fetchData = useCallback(async (filters: FilterState) => {
+    setAppliedFilters(filters);
     setLoading(true);
     const params = new URLSearchParams();
     if (filters.startDate) params.set("start", filters.startDate);
@@ -234,6 +238,18 @@ export default function PullRequestsPage() {
       <ReportFilters onApply={fetchData} onDataRange={setDataRange} showUserFilter={false} teamFilterEnabled={false} sourceLabel="Organization Aggregate" />
       <DataSourceBanner sourceLabel="Organization aggregate data (includes pull request metrics)" />
       <ReportBanner title={t("pullRequests.aboutTitle")} body={t("pullRequests.aboutBody")} />
+
+      {appliedFilters && (
+        <AiInsightPanel
+          kind="delivery"
+          title={t("aiAnalyst.delivery")}
+          description={t("aiAnalyst.deliveryDesc")}
+          icon={GitPullRequest}
+          start={appliedFilters.startDate}
+          end={appliedFilters.endDate}
+          orgId={/^\d+$/.test(appliedFilters.orgId) ? Number(appliedFilters.orgId) : undefined}
+        />
+      )}
 
       {loading ? (
         <LoadingSpinner message={t("pullRequests.loadingPR")} />

@@ -1,0 +1,1 @@
+ALTER TABLE "ai_insights" ADD COLUMN IF NOT EXISTS "language" varchar(8) DEFAULT 'en' NOT NULL;

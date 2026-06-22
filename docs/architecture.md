@@ -43,6 +43,7 @@ All dashboard pages are client components using `"use client"` that fetch data f
 | `components/ui/empty-state.tsx` | Empty state when no data is available |
 | `components/auth/admin-gate.tsx` | Admin password gate for settings pages |
 | `components/auth/auth-gate.tsx` | Dashboard password gate for all pages |
+| `components/ai/insight-panel.tsx` | Collapsible, streaming AI Analyst card with live reasoning trace (see [AI Analyst](ai-analyst.md)) |
 | `lib/i18n/locale-provider.tsx` | Internationalization provider (en/ar/es/fr) with RTL support |
 | `lib/theme/theme-provider.tsx` | Dark/light/system theme provider |
 | `lib/theme/chart-theme.tsx` | Theme-aware Chart.js options hook |
@@ -78,6 +79,11 @@ All API routes live under `app/src/app/api/` and use Zod for request validation.
 | `/api/settings/sync-history` | GET | Sync history log |
 | `/api/settings/sync-interval` | GET/POST | Background sync interval config |
 | `/api/settings/sync-schedule` | GET/POST | Cron-based sync schedule |
+| `/api/settings/ai-analyst` | GET/POST | AI Analyst configuration (enable, Copilot token, model) |
+| `/api/settings/ai-analyst/models` | GET | Live Copilot model catalog for the settings dropdown |
+| `/api/ai/status` | GET | Whether AI Analyst is enabled and configured |
+| `/api/ai/insights` | POST | Generate (or return cached) an AI narrative — see [AI Analyst](ai-analyst.md) |
+| `/api/ai/insights/stream` | POST | SSE streaming AI narrative + reasoning trace |
 | `/api/settings/app-info` | GET | Application info and database status |
 | `/api/auth/verify-admin` | POST | Admin password verification |
 | `/api/auth/verify-dashboard` | GET/POST | Dashboard access verification |

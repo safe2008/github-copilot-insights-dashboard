@@ -7,10 +7,18 @@ import { safeErrorMessage } from "@/lib/auth";
 const ALLOWED_KEYS = ["github_token", "github_enterprise_slug", "sync_scope", "sync_org_logins"] as const;
 type SettingKey = (typeof ALLOWED_KEYS)[number];
 
-const putSchema = z.object({
+const singlePutSchema = z.object({
   key: z.enum(ALLOWED_KEYS),
   value: z.string().min(1).max(1000),
 });
+
+// Accept either a single setting or a batch so the UI can persist related
+// settings (e.g. token + enterprise slug) in one request.
+const bulkPutSchema = z.object({
+  settings: z.array(singlePutSchema).min(1).max(ALLOWED_KEYS.length),
+});
+
+const putSchema = z.union([bulkPutSchema, singlePutSchema]);
 
 const deleteSchema = z.object({
   key: z.enum(ALLOWED_KEYS),
@@ -45,18 +53,21 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { key, value } = putSchema.parse(body);
+    const parsed = putSchema.parse(body);
+    const items = "settings" in parsed ? parsed.settings : [parsed];
 
-    await setSetting(key, value);
-    console.info(`Setting "${key}" updated successfully`);
-    logAudit({
-      action: "setting_updated",
-      category: "settings",
-      details: { key, valuePreview: key === "github_token" ? "***" : value.slice(0, 50) },
-      ipAddress: getClientIp(request),
-    });
+    for (const { key, value } of items) {
+      await setSetting(key, value);
+      console.info(`Setting "${key}" updated successfully`);
+      logAudit({
+        action: "setting_updated",
+        category: "settings",
+        details: { key, valuePreview: key === "github_token" ? "***" : value.slice(0, 50) },
+        ipAddress: getClientIp(request),
+      });
+    }
 
-    return NextResponse.json({ success: true, key });
+    return NextResponse.json({ success: true, keys: items.map((i) => i.key) });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(

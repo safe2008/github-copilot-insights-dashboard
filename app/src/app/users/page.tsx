@@ -25,6 +25,7 @@ interface UserRow {
   usedChat: boolean;
   usedCli: boolean;
   lastActiveDate: string;
+  aiCreditsUsed: number;
 }
 
 interface LicensedUser {
@@ -53,6 +54,7 @@ interface MergedUser {
   usedCli: boolean;
   lastActiveDate: string;
   monthlyCost: number;
+  aiCreditsUsed: number;
 }
 
 interface AdvancedFilters {
@@ -227,6 +229,7 @@ export default function UsersPage() {
         usedCli: u.usedCli,
         lastActiveDate: u.lastActiveDate,
         monthlyCost: lic?.monthlyCost ?? 0,
+        aiCreditsUsed: u.aiCreditsUsed,
       });
     }
 
@@ -249,6 +252,7 @@ export default function UsersPage() {
             ? new Date(lu.lastActivityAt).toISOString().split("T")[0]
             : "-",
           monthlyCost: lu.monthlyCost,
+          aiCreditsUsed: 0,
         });
       }
     }
@@ -379,6 +383,15 @@ export default function UsersPage() {
       render: (value: unknown) => {
         const n = Number(value);
         return n > 0 ? `${n.toFixed(1)}%` : <span className="text-gray-400 dark:text-gray-500">-</span>;
+      },
+    },
+    {
+      key: "aiCreditsUsed" as const,
+      header: "AI Credits",
+      align: "right" as const,
+      render: (value: unknown) => {
+        const n = Number(value);
+        return n > 0 ? n.toLocaleString(undefined, { maximumFractionDigits: 1 }) : <span className="text-gray-400 dark:text-gray-500">-</span>;
       },
     },
     {

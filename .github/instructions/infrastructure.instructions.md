@@ -20,6 +20,16 @@ Next.js standalone output requires explicit COPY for these directories in the ru
 - `public/` — Favicon and static files
 - `drizzle/` — Migration SQL files
 
+### AI Analyst — Copilot CLI
+
+The AI Analyst uses `@github/copilot-sdk`, which spawns the `@github/copilot` CLI as a child process.
+Next's standalone tracer cannot follow the SDK's dynamic require for it, so:
+- A dedicated `copilot-cli` build stage installs the CLI as a flat tree; the runner copies it to
+  `copilot-cli/node_modules` and sets `COPILOT_CLI_PATH` to its `index.js` entry.
+- Keep the pinned `@github/copilot` version in the `copilot-cli` stage in sync with `pnpm-lock.yaml`.
+- On Alpine the CLI loads a musl binary (`@github/copilot-linuxmusl-*`); the runner installs `libstdc++`.
+- The Copilot token is supplied at runtime from settings (Key Vault) — never baked into the image.
+
 ## Deployment
 
 - `azd up` for full provision + deploy

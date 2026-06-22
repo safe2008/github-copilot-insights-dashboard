@@ -3,6 +3,9 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { useRef } from "react";
+import { useGSAP } from "@gsap/react";
+import gsap from "gsap";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme/theme-provider";
 import { useTranslation } from "@/lib/i18n/locale-provider";
@@ -15,6 +18,7 @@ import {
   CreditCard,
   Settings,
   Sparkles,
+  Gem,
   Coins,
   GitPullRequest,
   Layers,
@@ -31,6 +35,7 @@ import { CliIcon } from "@/components/icons/cli-icon";
 // Premium Requests report sits at the bottom, followed by a separator and the
 // Metrics Reference.
 const NAV_KEYS = [
+  { key: "aiAnalyst.nav", href: "/ai-analyst", icon: Sparkles },
   { key: "nav.copilotUsage", href: "/metrics", icon: BarChart3 },
   { key: "nav.codeGeneration", href: "/code-generation", icon: Code },
   { key: "nav.pullRequests", href: "/pull-requests", icon: GitPullRequest },
@@ -41,7 +46,7 @@ const NAV_KEYS = [
   { key: "nav.aiCredits", href: "/ai-credits", icon: Coins },
   { key: "nav.usersData", href: "/users", icon: Contact },
   { key: "nav.enterpriseTeams", href: "/enterprise-teams", icon: Network },
-  { key: "nav.premiumRequests", href: "/premium-requests", icon: Sparkles },
+  { key: "nav.premiumRequests", href: "/premium-requests", icon: Gem },
   { key: "nav.metricsReference", href: "/reference", icon: BookOpen, separatorBefore: true },
 ];
 
@@ -50,7 +55,26 @@ const THEME_ICONS = { light: Sun, dark: Moon, system: Monitor } as const;
 export function Sidebar() {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
-  const { t, locale, setLocale, locales } = useTranslation();
+  const { t, locale, setLocale, locales, dir } = useTranslation();
+  const navRef = useRef<HTMLUListElement>(null);
+
+  // Stagger the navigation links into view on mount. They slide in from the
+  // inline-start edge so the motion reads naturally in both LTR and RTL.
+  useGSAP(
+    () => {
+      const root = navRef.current;
+      if (!root) return;
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      gsap.from(root.children, {
+        opacity: 0,
+        x: dir === "rtl" ? 12 : -12,
+        duration: 0.4,
+        ease: "power2.out",
+        stagger: 0.04,
+      });
+    },
+    { scope: navRef, dependencies: [dir] }
+  );
 
   const cycleTheme = () => {
     const order: Array<"system" | "light" | "dark"> = ["system", "light", "dark"];
@@ -69,7 +93,7 @@ export function Sidebar() {
         </span>
       </Link>
       <nav className="flex-1 overflow-y-auto px-2 py-3">
-        <ul className="space-y-0.5">
+        <ul ref={navRef} className="space-y-0.5">
           {NAV_KEYS.map((item) => {
             const isActive =
               pathname === item.href ||

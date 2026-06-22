@@ -601,6 +601,69 @@ export async function listEnterpriseMembers(opts: {
   return { members: allMembers, apiRequestCount };
 }
 
+export interface CopilotSeatAssignee {
+  login: string;
+  avatar_url?: string;
+  id?: number;
+}
+
+export interface CopilotSeatAssigningTeam {
+  id: number;
+  name: string;
+  slug: string;
+}
+
+export interface CopilotSeatOrganization {
+  login: string;
+  id?: number;
+}
+
+export interface CopilotSeat {
+  created_at: string;
+  updated_at: string;
+  pending_cancellation_date: string | null;
+  last_activity_at: string | null;
+  last_activity_editor: string | null;
+  plan_type: string;
+  assignee: CopilotSeatAssignee;
+  assigning_team: CopilotSeatAssigningTeam | null;
+  organization?: CopilotSeatOrganization;
+}
+
+interface CopilotSeatsResponse {
+  total_seats: number;
+  seats: CopilotSeat[];
+}
+
+/**
+ * Lists all Copilot seat assignments for an enterprise (paginated).
+ * Requires billing read permissions (`manage_billing:copilot` or equivalent).
+ */
+export async function listEnterpriseCopilotSeats(opts: {
+  enterpriseSlug: string;
+  token: string;
+}): Promise<{ seats: CopilotSeat[]; totalSeats: number; apiRequestCount: number }> {
+  const seats: CopilotSeat[] = [];
+  let apiRequestCount = 0;
+  let totalSeats = 0;
+  let page = 1;
+  const perPage = 100;
+
+  while (true) {
+    const url = `${GITHUB_API_BASE}/enterprises/${encodeURIComponent(opts.enterpriseSlug)}/copilot/billing/seats?per_page=${perPage}&page=${page}`;
+    const response = await fetchWithRetry(url, opts.token, MAX_RETRIES);
+    apiRequestCount++;
+    const data = (await response.json()) as CopilotSeatsResponse;
+    totalSeats = data.total_seats;
+    seats.push(...data.seats);
+
+    if (seats.length >= totalSeats || data.seats.length < perPage) break;
+    page++;
+  }
+
+  return { seats, totalSeats, apiRequestCount };
+}
+
 /**
  * Fetches org-level user data and aggregate data (with PR metrics) for a single org.
  */

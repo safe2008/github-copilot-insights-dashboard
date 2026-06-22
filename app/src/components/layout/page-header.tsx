@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Breadcrumb } from "@/components/layout/breadcrumb";
+import { Reveal } from "@/components/ui/reveal";
 import type { BreadcrumbItem } from "@/types/filters";
 
 interface PageHeaderProps {
@@ -21,7 +22,7 @@ interface PageHeaderProps {
  */
 export function PageHeader({ title, subtitle, breadcrumb, actions }: PageHeaderProps) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <Reveal className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
         {breadcrumb && breadcrumb.length > 0 && <Breadcrumb items={breadcrumb} />}
         <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{title}</h1>
@@ -32,6 +33,6 @@ export function PageHeader({ title, subtitle, breadcrumb, actions }: PageHeaderP
       {actions && (
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">{actions}</div>
       )}
-    </div>
+    </Reveal>
   );
 }

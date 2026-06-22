@@ -8,8 +8,7 @@ import {
   factCopilotUsageDaily,
 } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
-import { getGitHubConfig } from "@/lib/db/settings";
-import { resolveDisplayNames, formatUserLabel } from "@/lib/github/resolve-display-names";
+import { resolveUserNames } from "@/lib/github/resolve-display-names";
 import { safeErrorMessage } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -71,18 +70,14 @@ export async function GET() {
         .orderBy(dimEnterpriseTeam.teamName),
     ]);
 
-    // Resolve display names for users
-    const logins = users.map((u) => u.userLogin);
-    const { token } = await getGitHubConfig();
-    const displayNameMap = token
-      ? await resolveDisplayNames(logins, token)
-      : new Map<string, string>();
+    // Resolve display names for users (best-effort)
+    const names = await resolveUserNames(users.map((u) => u.userLogin));
 
     return NextResponse.json({
       users: users.map((u) => ({
         id: u.userId,
         login: u.userLogin,
-        displayLabel: formatUserLabel(u.userLogin, displayNameMap),
+        displayLabel: names.label(u.userLogin),
       })),
       teams: teams.filter((t) => t.teamName).map((t) => t.teamName),
       orgs: orgs.map((o) => ({ id: o.orgId, name: o.orgName })),

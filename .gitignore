@@ -152,3 +152,4 @@ blob-report/
 samples/
 .playwright-mcp/
 .private/
+.workspace/

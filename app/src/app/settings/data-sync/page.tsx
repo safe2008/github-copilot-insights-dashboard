@@ -1247,7 +1247,7 @@ export default function DataSyncPage() {
               </span>
               {teamsSyncing && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400" />}
             </div>
-            <div ref={teamsLogContainerRef} className="max-h-48 overflow-y-auto px-3 py-2 font-mono text-xs">
+            <div ref={teamsLogContainerRef} className="scrollbar-log max-h-48 overflow-y-auto px-3 py-2 font-mono text-xs">
               {teamsSyncLogs.map((line, i) => (
                 <div key={i} className="whitespace-pre-wrap break-all">
                   {line}
@@ -1334,7 +1334,7 @@ export default function DataSyncPage() {
             <span className="text-xs font-medium text-gray-400 dark:text-gray-500">Ingestion Log</span>
             {isBusy && <Loader2 className="ml-auto h-3 w-3 animate-spin text-green-400" />}
           </div>
-          <div ref={logContainerRef} className="max-h-64 overflow-y-auto p-3 font-mono text-xs leading-5">
+          <div ref={logContainerRef} className="scrollbar-log max-h-64 overflow-y-auto p-3 font-mono text-xs leading-5">
             {ingestLogs.map((line, i) => (
               <div
                 key={i}
@@ -1572,7 +1572,7 @@ export default function DataSyncPage() {
                                     Download
                                   </a>
                                 </div>
-                                <div className="rounded-md border border-gray-300 bg-gray-900 max-h-64 overflow-y-auto">
+                                <div className="scrollbar-log rounded-md border border-gray-300 bg-gray-900 max-h-64 overflow-y-auto">
                                   <pre className="p-3 font-mono text-xs leading-5 text-gray-300 whitespace-pre-wrap">
                                     {entry.logMessages}
                                   </pre>

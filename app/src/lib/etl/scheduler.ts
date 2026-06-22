@@ -25,6 +25,7 @@ async function runIngestion() {
     const { getGitHubConfig, getSyncScopeConfig } = await import("@/lib/db/settings");
     const { ingestCopilotUsage } = await import("@/lib/etl/ingest");
     const { syncEnterpriseTeams } = await import("@/lib/etl/enterprise-teams");
+    const { syncEnterpriseContext } = await import("@/lib/etl/enterprise-context");
     const { db } = await import("@/lib/db");
     const { ingestionLog } = await import("@/lib/db/schema");
     const { token, enterpriseSlug } = await getGitHubConfig();
@@ -67,6 +68,22 @@ async function runIngestion() {
       );
     } catch (teamsErr) {
       console.error("Scheduled enterprise teams sync failed:", teamsErr);
+    }
+
+    try {
+      console.info("Scheduled enterprise context sync started");
+      const contextResult = await syncEnterpriseContext({ enterpriseSlug, token });
+      const seatsLabel = contextResult.seats.status === "success"
+        ? `${contextResult.seats.assignmentsSynced}`
+        : `skipped (${contextResult.seats.error})`;
+      const orgMembersLabel = contextResult.orgMembers.status === "success"
+        ? `${contextResult.orgMembers.membersSynced}`
+        : `skipped (${contextResult.orgMembers.error})`;
+      console.info(
+        `Scheduled enterprise context sync complete — seats: ${seatsLabel}, org members: ${orgMembersLabel}`,
+      );
+    } catch (contextErr) {
+      console.error("Scheduled enterprise context sync failed:", contextErr);
     }
 
     // Enforce audit-log retention so the table doesn't grow unbounded.

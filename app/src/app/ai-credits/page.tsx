@@ -8,11 +8,13 @@ import { useTranslation } from "@/lib/i18n/locale-provider";
 import { PageHeader } from "@/components/layout/page-header";
 import { ReportBanner } from "@/components/layout/report-banner";
 import { DataTable } from "@/components/ui/data-table";
+import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { usePdfExport } from "@/components/ui/pdf-export";
 import { ConfigurationBanner } from "@/components/layout/configuration-banner";
 import { DataSourceBanner } from "@/components/layout/report-filters";
-import { AlertTriangle, Settings, Lightbulb, ExternalLink } from "lucide-react";
+import { AiInsightPanel } from "@/components/ai/insight-panel";
+import { AlertTriangle, Settings, Lightbulb, ExternalLink, Coins } from "lucide-react";
 import Link from "next/link";
 
 interface CreditBucket {
@@ -70,6 +72,38 @@ interface CreditPool {
   utilizationPct: number;
 }
 
+interface UserCreditConsumption {
+  userId: number;
+  userLogin: string;
+  displayLabel: string;
+  creditsUsed: number;
+  daysActive: number;
+}
+
+interface OrgCreditConsumption {
+  orgId: number;
+  orgName: string;
+  creditsUsed: number;
+}
+
+interface TeamCreditConsumption {
+  teamId: number;
+  teamName: string;
+  teamSlug: string;
+  creditsUsed: number;
+  members: number;
+}
+
+/** Per-user AI credit consumption signal (Copilot Usage Metrics, 2026-06-19). */
+interface CreditConsumption {
+  available: boolean;
+  totalCreditsUsed: number;
+  activeUsers: number;
+  perUser: UserCreditConsumption[];
+  perOrg: OrgCreditConsumption[];
+  perTeam: TeamCreditConsumption[];
+}
+
 interface AiCreditData {
   period: { year: number; month: number };
   unitType: string;
@@ -79,12 +113,12 @@ interface AiCreditData {
   filters: {
     options: {
       models: Array<{ value: string; label: string }>;
-      orgs: string[];
-      users: Array<{ login: string; displayLabel: string }>;
-      teams: string[];
       costCenters: string[];
+      users: Array<{ userId: number; displayLabel: string }>;
+      orgs: Array<{ id: number; name: string }>;
+      teams: Array<{ id: number; name: string; slug: string; memberCount: number }>;
     };
-    selected: { model: string; org: string; user: string; team: string; costCenter: string };
+    selected: { model: string; costCenter: string; userId: string; orgId: string; teamId: string };
   };
   perModelBreakdown: ModelBreakdown[];
   perSkuBreakdown: SkuBreakdown[];
@@ -95,6 +129,7 @@ interface AiCreditData {
   dailyTrend: DailyTrendPoint[];
   monthlyTrend: MonthlyTrendPoint[];
   changeVsPrevious: ChangeVsPrevious | null;
+  creditConsumption: CreditConsumption;
 }
 
 interface DashboardOverlay {
@@ -146,13 +181,25 @@ export default function AiCreditsPage() {
   const { commonOptions: barOpts, doughnutOptions: doughnutOpts } = useChartOptions();
   const { t } = useTranslation();
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [modelFilter, setModelFilter] = useState("");
-  const [orgFilter, setOrgFilter] = useState("");
-  const [userFilter, setUserFilter] = useState("");
-  const [teamFilter, setTeamFilter] = useState("");
-  const [costCenterFilter, setCostCenterFilter] = useState("");
+  // Applied snapshot drives the data fetch; the filter bar edits draft state and
+  // commits it on Apply (mirrors the shared ReportFilters experience).
+  const [applied, setApplied] = useState(() => ({
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    models: [] as string[],
+    costCenters: [] as string[],
+    userIds: [] as string[],
+    orgIds: [] as string[],
+    teamIds: [] as string[],
+  }));
+  const { year, month } = applied;
+  const [draftYear, setDraftYear] = useState(applied.year);
+  const [draftMonth, setDraftMonth] = useState(applied.month);
+  const [modelFilter, setModelFilter] = useState<string[]>([]);
+  const [costCenterFilter, setCostCenterFilter] = useState<string[]>([]);
+  const [userId, setUserId] = useState<string[]>([]);
+  const [orgId, setOrgId] = useState<string[]>([]);
+  const [teamId, setTeamId] = useState<string[]>([]);
   const [trendGranularity, setTrendGranularity] = useState<"daily" | "weekly" | "monthly" | "3m" | "6m">("monthly");
   const [data, setData] = useState<AiCreditData | null>(null);
   const [dashboardOverlay, setDashboardOverlay] = useState<DashboardOverlay | null>(null);
@@ -165,14 +212,15 @@ export default function AiCreditsPage() {
     setLoading(true);
     setError(null);
 
-    const start = monthStart(year, month);
-    const end = monthEnd(year, month);
-    const params = new URLSearchParams({ year: String(year), month: String(month) });
-    if (modelFilter) params.set("model", modelFilter);
-    if (orgFilter) params.set("org", orgFilter);
-    if (userFilter) params.set("user", userFilter);
-    if (teamFilter) params.set("team", teamFilter);
-    if (costCenterFilter) params.set("costCenter", costCenterFilter);
+    const { year: y, month: m, models, costCenters, userIds, orgIds, teamIds } = applied;
+    const start = monthStart(y, m);
+    const end = monthEnd(y, m);
+    const params = new URLSearchParams({ year: String(y), month: String(m) });
+    if (models.length) params.set("model", models.join(","));
+    if (costCenters.length) params.set("costCenter", costCenters.join(","));
+    if (userIds.length) params.set("userId", userIds.join(","));
+    if (orgIds.length) params.set("orgId", orgIds.join(","));
+    if (teamIds.length) params.set("teamId", teamIds.join(","));
 
     Promise.all([
       fetch(`/api/metrics/ai-credits?${params.toString()}`).then(async (res) => {
@@ -192,17 +240,28 @@ export default function AiCreditsPage() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [year, month, modelFilter, orgFilter, userFilter, teamFilter, costCenterFilter]);
+  }, [applied]);
 
   useEffect(() => {
     if (!data) return;
-    const { options } = data.filters;
-    if (modelFilter && !options.models.some((m) => m.value === modelFilter)) setModelFilter("");
-    if (orgFilter && !options.orgs.includes(orgFilter)) setOrgFilter("");
-    if (userFilter && !options.users.some((u) => u.login === userFilter)) setUserFilter("");
-    if (teamFilter && !options.teams.includes(teamFilter)) setTeamFilter("");
-    if (costCenterFilter && !options.costCenters.includes(costCenterFilter)) setCostCenterFilter("");
-  }, [data, modelFilter, orgFilter, userFilter, teamFilter, costCenterFilter]);
+    const o = data.filters.options;
+    const valid = {
+      models: new Set(o.models.map((m) => m.value)),
+      costCenters: new Set(o.costCenters),
+      users: new Set(o.users.map((u) => String(u.userId))),
+      orgs: new Set(o.orgs.map((x) => String(x.id))),
+      teams: new Set(o.teams.map((x) => String(x.id))),
+    };
+    const prune = (prev: string[], allowed: Set<string>) => {
+      const next = prev.filter((v) => allowed.has(v));
+      return next.length === prev.length ? prev : next;
+    };
+    setModelFilter((p) => prune(p, valid.models));
+    setCostCenterFilter((p) => prune(p, valid.costCenters));
+    setUserId((p) => prune(p, valid.users));
+    setOrgId((p) => prune(p, valid.orgs));
+    setTeamId((p) => prune(p, valid.teams));
+  }, [data]);
 
   const compositionDonut = useMemo(() => {
     if (!data) return null;
@@ -260,13 +319,13 @@ export default function AiCreditsPage() {
   }, [data, t]);
 
   const orgBar = useMemo(() => {
-    if (!data || data.perOrgBreakdown.length === 0) return null;
-    const top = data.perOrgBreakdown.slice(0, 12);
+    if (!data || data.creditConsumption.perOrg.length === 0) return null;
+    const top = data.creditConsumption.perOrg.slice(0, 12);
     return {
-      labels: top.map((o) => o.org),
+      labels: top.map((o) => o.orgName),
       datasets: [{
-        label: t("aiCredits.creditsLabel"),
-        data: top.map((o) => o.grossQuantity),
+        label: t("aiCredits.creditsUsedLabel"),
+        data: top.map((o) => o.creditsUsed),
         backgroundColor: "#6366f1",
         borderRadius: 6,
       }],
@@ -274,14 +333,28 @@ export default function AiCreditsPage() {
   }, [data, t]);
 
   const teamBar = useMemo(() => {
-    if (!data || data.perTeamBreakdown.length === 0) return null;
-    const top = data.perTeamBreakdown.slice(0, 12);
+    if (!data || data.creditConsumption.perTeam.length === 0) return null;
+    const top = data.creditConsumption.perTeam.slice(0, 12);
     return {
-      labels: top.map((o) => o.team),
+      labels: top.map((o) => o.teamName),
       datasets: [{
-        label: t("aiCredits.creditsLabel"),
-        data: top.map((o) => o.grossQuantity),
+        label: t("aiCredits.creditsUsedLabel"),
+        data: top.map((o) => o.creditsUsed),
         backgroundColor: "#f59e0b",
+        borderRadius: 6,
+      }],
+    };
+  }, [data, t]);
+
+  const consumptionUserBar = useMemo(() => {
+    if (!data || data.creditConsumption.perUser.length === 0) return null;
+    const top = data.creditConsumption.perUser.slice(0, 15);
+    return {
+      labels: top.map((u) => u.displayLabel),
+      datasets: [{
+        label: t("aiCredits.creditsUsedLabel"),
+        data: top.map((u) => u.creditsUsed),
+        backgroundColor: top.map((_, i) => MODEL_COLORS[i % MODEL_COLORS.length]),
         borderRadius: 6,
       }],
     };
@@ -415,13 +488,52 @@ export default function AiCreditsPage() {
   }, [data, dashboardOverlay, prOverlay, t]);
 
   const goMonth = (delta: number) => {
-    let m = month + delta;
-    let y = year;
+    let m = draftMonth + delta;
+    let y = draftYear;
     if (m < 1) { m = 12; y--; }
     if (m > 12) { m = 1; y++; }
-    setYear(y);
-    setMonth(m);
+    setDraftYear(y);
+    setDraftMonth(m);
   };
+
+  const sameSelection = (a: string[], b: string[]) =>
+    a.length === b.length && a.every((v) => b.includes(v));
+  const hasActiveFilters =
+    modelFilter.length > 0 ||
+    costCenterFilter.length > 0 ||
+    userId.length > 0 ||
+    orgId.length > 0 ||
+    teamId.length > 0;
+  const filtersDirty =
+    draftYear !== applied.year ||
+    draftMonth !== applied.month ||
+    !sameSelection(modelFilter, applied.models) ||
+    !sameSelection(costCenterFilter, applied.costCenters) ||
+    !sameSelection(userId, applied.userIds) ||
+    !sameSelection(orgId, applied.orgIds) ||
+    !sameSelection(teamId, applied.teamIds);
+  const applyFilters = () => {
+    setApplied({
+      year: draftYear,
+      month: draftMonth,
+      models: modelFilter,
+      costCenters: costCenterFilter,
+      userIds: userId,
+      orgIds: orgId,
+      teamIds: teamId,
+    });
+  };
+  const resetFilters = () => {
+    setModelFilter([]);
+    setCostCenterFilter([]);
+    setUserId([]);
+    setOrgId([]);
+    setTeamId([]);
+    setApplied((prev) => ({ ...prev, models: [], costCenters: [], userIds: [], orgIds: [], teamIds: [] }));
+  };
+  const fmtPeriodDay = (iso: string) =>
+    new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  const periodRangeLabel = `${fmtPeriodDay(monthStart(draftYear, draftMonth))} – ${fmtPeriodDay(monthEnd(draftYear, draftMonth))}`;
 
   if (loading) {
     return <LoadingSpinner message={t("aiCredits.loading")} />;
@@ -473,11 +585,19 @@ export default function AiCreditsPage() {
   const mergedPrs = prOverlay?.totals?.totalMerged ?? 0;
   const reviewedPrs = prOverlay?.totals?.totalReviewed ?? 0;
 
-  // Additional business-value metrics for AI usage governance.
-  const activeUsers = data.perUserBreakdown.length;
+  // Additional business-value metrics for AI usage governance. Active users and
+  // per-user credit consumption come from the usage-metrics signal
+  // (ai_credits_used); billing dollars stay enterprise-wide because the billing
+  // feed has no per-user breakdown.
+  const consumption = data.creditConsumption;
+  const creditsConsumed = consumption.totalCreditsUsed;
+  const activeUsers = consumption.activeUsers || data.perUserBreakdown.length;
   const modelsInUse = data.perModelBreakdown.length;
   const costPerActiveUser = activeUsers > 0 ? totals.netAmount / activeUsers : 0;
-  const creditsPerActiveUser = activeUsers > 0 ? totals.grossCredits / activeUsers : 0;
+  const creditsPerActiveUser = activeUsers > 0
+    ? (creditsConsumed > 0 ? creditsConsumed : totals.grossCredits) / activeUsers
+    : 0;
+  const topConsumer = consumption.perUser[0] ?? null;
   const topModelSharePct = totals.netAmount > 0 && data.perModelBreakdown.length > 0
     ? Math.round((data.perModelBreakdown[0].netAmount / totals.netAmount) * 100)
     : 0;
@@ -492,8 +612,17 @@ export default function AiCreditsPage() {
         subtitle={t("aiCredits.subtitle")}
         actions={<PdfButton />}
       />
-      <DataSourceBanner sourceLabel="GitHub AI Credit Billing API (/settings/billing/ai_credit/usage) + Copilot Usage/PR overlays" live />
+      <DataSourceBanner sourceLabel="GitHub AI Credit Billing API (/settings/billing/ai_credit/usage) + per-user ai_credits_used (Copilot Usage Metrics) + PR overlays" live />
       <ReportBanner title={t("aiCredits.aboutTitle")} body={t("aiCredits.aboutBody")} />
+
+      <AiInsightPanel
+        kind="cost_license"
+        title={t("aiAnalyst.cost")}
+        description={t("aiAnalyst.costDesc")}
+        icon={Coins}
+        start={monthStart(year, month)}
+        end={monthEnd(year, month)}
+      />
 
       <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-xs text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-300">
         {t("aiCredits.ubbNotice")}
@@ -527,66 +656,88 @@ export default function AiCreditsPage() {
         </ul>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          onClick={() => goMonth(-1)}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-        >
-          ← {t("aiCredits.prev")}
-        </button>
-        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-          {MONTH_NAMES[month - 1]} {year}
-        </span>
-        <button
-          onClick={() => goMonth(1)}
-          disabled={year === now.getFullYear() && month === now.getMonth() + 1}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-        >
-          {t("aiCredits.next")} →
-        </button>
-      </div>
-
       <Card title={t("aiCredits.filtersTitle")} subtitle={t("aiCredits.filtersDesc")}>
+        <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-gray-100 pb-3 dark:border-gray-700">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            {t("aiCredits.period")}
+          </span>
+          <button
+            onClick={() => goMonth(-1)}
+            className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+          >
+            ← {t("aiCredits.prev")}
+          </button>
+          <span className="min-w-28 text-center text-sm font-medium text-gray-900 dark:text-gray-100">
+            {MONTH_NAMES[draftMonth - 1]} {draftYear}
+          </span>
+          <button
+            onClick={() => goMonth(1)}
+            disabled={draftYear === now.getFullYear() && draftMonth === now.getMonth() + 1}
+            className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+          >
+            {t("aiCredits.next")} →
+          </button>
+          <span className="ml-1 text-xs text-gray-400 dark:text-gray-500">{periodRangeLabel}</span>
+        </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
-          <SelectFilter
+          <MultiSelectFilter
             label={t("aiCredits.model")}
             allLabel={t("common.all")}
-            value={modelFilter}
+            selected={modelFilter}
             onChange={setModelFilter}
             options={data.filters.options.models.map((m) => ({ value: m.value, label: m.label }))}
           />
-          <SelectFilter
+          <MultiSelectFilter
             label={t("aiCredits.costCenter")}
             allLabel={t("common.all")}
-            value={costCenterFilter}
+            selected={costCenterFilter}
             onChange={setCostCenterFilter}
             options={data.filters.options.costCenters.map((v) => ({ value: v, label: v }))}
             emptyHint={t("aiCredits.noFilterData")}
           />
-          <SelectFilter
+          <MultiSelectFilter
             label={t("aiCredits.organization")}
             allLabel={t("common.all")}
-            value={orgFilter}
-            onChange={setOrgFilter}
-            options={data.filters.options.orgs.map((v) => ({ value: v, label: v }))}
+            selected={orgId}
+            onChange={setOrgId}
+            options={data.filters.options.orgs.map((o) => ({ value: String(o.id), label: o.name }))}
             emptyHint={t("aiCredits.noFilterData")}
           />
-          <SelectFilter
+          <MultiSelectFilter
             label={t("aiCredits.user")}
             allLabel={t("common.all")}
-            value={userFilter}
-            onChange={setUserFilter}
-            options={data.filters.options.users.map((u) => ({ value: u.login, label: u.displayLabel }))}
+            selected={userId}
+            onChange={setUserId}
+            options={data.filters.options.users.map((u) => ({ value: String(u.userId), label: u.displayLabel }))}
             emptyHint={t("aiCredits.noFilterData")}
           />
-          <SelectFilter
+          <MultiSelectFilter
             label={t("aiCredits.team")}
             allLabel={t("common.all")}
-            value={teamFilter}
-            onChange={setTeamFilter}
-            options={data.filters.options.teams.map((v) => ({ value: v, label: v }))}
+            selected={teamId}
+            onChange={setTeamId}
+            options={data.filters.options.teams.map((tm) => ({ value: String(tm.id), label: tm.name }))}
             emptyHint={t("aiCredits.noFilterData")}
           />
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              {t("aiCredits.reset")}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={applyFilters}
+            disabled={!filtersDirty}
+            className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white shadow-xs hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {t("common.apply")}
+          </button>
         </div>
       </Card>
 
@@ -607,6 +758,27 @@ export default function AiCreditsPage() {
           <Kpi label={t("aiCredits.topModelShare")} value={`${topModelSharePct}%`} color={topModelSharePct >= 60 ? "text-amber-600" : "text-gray-900"} />
           <Kpi label={t("aiCredits.additionalUsage")} value={fmt$(additionalUsage)} color={additionalUsage > 0 ? "text-indigo-600" : "text-green-600"} />
         </div>
+      </Card>
+
+      <Card title={t("aiCredits.consumptionTitle")} subtitle={t("aiCredits.consumptionDesc")}>
+        {consumption.available ? (
+          <>
+            <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <Kpi label={t("aiCredits.creditsConsumed")} value={fmtNum(creditsConsumed)} color="text-indigo-600" />
+              <Kpi label={t("aiCredits.creditUsers")} value={fmtNum(activeUsers)} />
+              <Kpi label={t("aiCredits.avgCreditsPerUser")} value={fmtNum(Math.round(creditsPerActiveUser))} />
+              <Kpi label={t("aiCredits.topConsumer")} value={topConsumer ? fmtNum(topConsumer.creditsUsed) : "\u2014"} color="text-amber-600" />
+            </div>
+            <p className="mb-3 rounded-md bg-indigo-50 px-3 py-2 text-xs text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+              {t("aiCredits.consumptionNote")}
+            </p>
+            {consumptionUserBar && (
+              <div className="h-[280px]"><Bar data={consumptionUserBar} options={{ ...barOpts, maintainAspectRatio: false, plugins: { ...barOpts.plugins, legend: { display: false } } }} /></div>
+            )}
+          </>
+        ) : (
+          <p className="py-8 text-center text-sm text-gray-400">{t("aiCredits.consumptionUnavailable")}</p>
+        )}
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -918,22 +1090,46 @@ export default function AiCreditsPage() {
         </Card>
       )}
 
-      {data.perUserBreakdown.length > 0 && (
-        <Card title={t("aiCredits.userBreakdown", `${data.perUserBreakdown.length}`)} subtitle={t("aiCredits.userBreakdownDesc")}>
+      {consumption.perUser.length > 0 && (
+        <Card title={t("aiCredits.userBreakdown", `${consumption.perUser.length}`)} subtitle={t("aiCredits.userBreakdownDesc")}>
           <DataTable
             columns={[
               { key: "displayLabel", header: t("aiCredits.user"), render: (value: unknown) => <span className="font-medium text-gray-900 dark:text-gray-100">{String(value)}</span> },
-              { key: "grossQuantity", header: t("aiCredits.creditsLabel"), align: "right", render: (value: unknown) => fmtNum(Number(value)) },
-              { key: "netQuantity", header: t("aiCredits.billableCredits"), align: "right", render: (value: unknown) => fmtNum(Number(value)) },
-              { key: "netAmount", header: t("aiCredits.netAmount"), align: "right", render: (value: unknown) => <span className="font-medium text-gray-900 dark:text-gray-100">{fmt$(Number(value))}</span> },
+              { key: "creditsUsed", header: t("aiCredits.creditsUsedLabel"), align: "right", render: (value: unknown) => <span className="font-medium text-gray-900 dark:text-gray-100">{fmtNum(Number(value))}</span> },
+              { key: "daysActive", header: t("aiCredits.daysActive"), align: "right", render: (value: unknown) => fmtNum(Number(value)) },
             ]}
-            data={(data.perUserBreakdown) as unknown as Record<string, unknown>[]}
+            data={(consumption.perUser) as unknown as Record<string, unknown>[]}
             emptyMessage={t("aiCredits.noUserData")}
             searchPlaceholder={t("common.searchUsersEllipsis")}
             pageSize={25}
-            defaultSortKey="grossQuantity"
+            defaultSortKey="creditsUsed"
             defaultSortDir="desc"
           />
+        </Card>
+      )}
+
+      {consumption.perTeam.length > 0 && (
+        <Card title={t("aiCredits.teamBreakdown")} subtitle={t("aiCredits.teamBreakdownDesc")}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                  <th className="pb-2 pr-4">{t("aiCredits.team")}</th>
+                  <th className="pb-2 pr-4 text-right">{t("aiCredits.creditsUsedLabel")}</th>
+                  <th className="pb-2 text-right">{t("aiCredits.contributingMembers")}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {consumption.perTeam.map((tm) => (
+                  <tr key={tm.teamId} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    <td className="py-2 pr-4 font-medium text-gray-900 dark:text-gray-100">{tm.teamName}</td>
+                    <td className="py-2 pr-4 text-right text-gray-700 dark:text-gray-300">{fmtNum(tm.creditsUsed)}</td>
+                    <td className="py-2 text-right text-gray-700 dark:text-gray-300">{fmtNum(tm.members)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
     </div>
@@ -960,39 +1156,5 @@ function Kpi({ label, value, color }: { label: string; value: string | number; c
         {typeof value === "number" ? value.toLocaleString() : value}
       </p>
     </div>
-  );
-}
-
-function SelectFilter({
-  label,
-  allLabel,
-  value,
-  onChange,
-  options,
-  emptyHint,
-}: {
-  label: string;
-  allLabel: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: Array<{ value: string; label: string }>;
-  emptyHint?: string;
-}) {
-  const hasOptions = options.length > 0;
-  return (
-    <label className="flex flex-col gap-1 text-xs text-gray-600 dark:text-gray-300">
-      <span className="font-medium">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={!hasOptions}
-        className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-700 shadow-xs focus:border-blue-500 focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
-      >
-        <option value="">{hasOptions ? allLabel : (emptyHint ?? allLabel)}</option>
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>{opt.label}</option>
-        ))}
-      </select>
-    </label>
   );
 }

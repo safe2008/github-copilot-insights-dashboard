@@ -153,9 +153,19 @@ describe("transformToFactUsage", () => {
       locSuggestedToDeleteSum: 100,
       locAddedSum: 300,
       locDeletedSum: 50,
+      aiCreditsUsed: 0,
       aiAdoptionPhase: null,
       aiAdoptionPhaseVersion: null,
     });
+  });
+
+  it("should map ai_credits_used when present", () => {
+    expect(transformToFactUsage({ ...mockRecord, ai_credits_used: 12.5 }).aiCreditsUsed).toBe(12.5);
+  });
+
+  it("should default ai_credits_used to 0 when absent or invalid", () => {
+    expect(transformToFactUsage(mockRecord).aiCreditsUsed).toBe(0);
+    expect(transformToFactUsage({ ...mockRecord, ai_credits_used: NaN }).aiCreditsUsed).toBe(0);
   });
 
   it("should parse organization_id when present", () => {

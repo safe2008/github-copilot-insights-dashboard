@@ -3,6 +3,13 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
+  --font-sans:
+    var(--font-sora), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono:
+    var(--font-cascadia-code), ui-monospace, "SF Mono", "SFMono-Regular", Menlo,
+    Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
   --color-growth: #22c55e;
   --color-growth-light: #dcfce7;
 
@@ -25,6 +32,22 @@
   color utility to any element that depends on these defaults.
 */
 @layer base {
+  /*
+    Typography. Sora (geometric sans) is the primary UI typeface for Latin
+    scripts (en/es/fr); Cairo is its Arabic companion — geometric, low-contrast
+    forms that echo Sora. Cascadia Code is the monospace face for code,
+    identifiers, and API paths. Font files load via next/font in
+    app/src/app/layout.tsx and surface here as CSS custom properties.
+  */
+  html {
+    font-family: var(--font-sans);
+  }
+
+  /* Arabic locale swaps the sans stack to Cairo; mono stays Cascadia Code. */
+  :lang(ar) {
+    --font-sans: var(--font-cairo), ui-sans-serif, system-ui, sans-serif;
+  }
+
   *,
   ::after,
   ::before,
@@ -58,4 +81,35 @@
   .pdf-capturing > :not(:first-child) input {
     display: none !important;
   }
+}
+
+/*
+  Always-visible thin scrollbar for dark log/console panels.
+  macOS renders overlay scrollbars that stay hidden until actively
+  scrolling, making scrollable log panels appear to have no scrollbar.
+  Styling `::-webkit-scrollbar` forces a persistent, visible scrollbar.
+*/
+.scrollbar-log {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: rgba(148, 163, 184, 0.6) transparent; /* Firefox: thumb track */
+}
+
+.scrollbar-log::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.scrollbar-log::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-log::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.55);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.scrollbar-log::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(148, 163, 184, 0.8);
 }

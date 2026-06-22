@@ -1,0 +1,1 @@
+ALTER TABLE "fact_copilot_usage_daily" ADD COLUMN IF NOT EXISTS "ai_credits_used" numeric DEFAULT '0' NOT NULL;

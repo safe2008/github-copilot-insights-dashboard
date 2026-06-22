@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ingestCopilotUsage } from "@/lib/etl/ingest";
+import { syncEnterpriseContext } from "@/lib/etl/enterprise-context";
 import { getGitHubConfig, getSyncScopeConfig } from "@/lib/db/settings";
 import { z } from "zod";
 import { isValidDate } from "@/lib/utils";
@@ -33,16 +34,19 @@ export async function POST(request: NextRequest) {
       orgLogins,
     });
 
+    const contextResult = await syncEnterpriseContext({ enterpriseSlug: slug, token });
+
     logAudit({
       action: "data_sync_manual",
       category: "data_sync",
-      details: { day: params.day ?? "latest", scopes },
+      details: { day: params.day ?? "latest", scopes, enterpriseContext: contextResult },
       ipAddress: getClientIp(request),
     });
 
     return NextResponse.json({
       success: true,
       ...result,
+      enterpriseContext: contextResult,
     });
   } catch (err) {
     console.error("Ingest API error:", err);
