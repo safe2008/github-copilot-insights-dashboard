@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-corepack enable
+npm install --global --no-audit --no-fund pnpm@11.5.1
 cd app
-corepack prepare --activate
 pnpm install
 pnpm exec drizzle-kit migrate

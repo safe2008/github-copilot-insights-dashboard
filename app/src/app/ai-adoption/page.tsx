@@ -38,6 +38,9 @@ interface PerPhaseRow {
   avgLocDeleted: number;
   avgAiCredits: number;
   totalAiCredits: number;
+  avgPrsMerged: number | null;
+  avgPrsReviewed: number | null;
+  avgMinutesToMerge: number | null;
 }
 
 interface AiAdoptionData {
@@ -267,6 +270,9 @@ export default function AiAdoptionPage() {
                 { key: "avgCodeAccepted", header: t("aiAdoption.avgCodeAccepted"), align: "right", render: (value: unknown) => Number(value).toLocaleString() },
                 { key: "avgLocAdded", header: t("aiAdoption.avgLocAdded"), align: "right", render: (value: unknown) => Number(value).toLocaleString() },
                 { key: "avgAiCredits", header: t("aiAdoption.avgAiCredits"), align: "right", render: (value: unknown) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 }) },
+                { key: "avgPrsMerged", header: t("aiAdoption.avgPrsMerged"), align: "right", render: (value: unknown) => value == null ? "—" : Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 }) },
+                { key: "avgPrsReviewed", header: t("aiAdoption.avgPrsReviewed"), align: "right", render: (value: unknown) => value == null ? "—" : Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 }) },
+                { key: "avgMinutesToMerge", header: t("aiAdoption.avgMinutesToMerge"), align: "right", render: (value: unknown) => value == null ? "—" : Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 }) },
               ]}
               data={(data?.perPhaseMetrics ?? []) as unknown as Record<string, unknown>[]}
               emptyMessage={t("common.noResults")}

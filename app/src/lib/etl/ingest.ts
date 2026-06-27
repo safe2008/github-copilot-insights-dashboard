@@ -18,6 +18,8 @@ import {
   factUserLanguageModelDaily,
   factUserIdeVersionDaily,
   factOrgAggregateDaily,
+  factOrgAdoptionPhaseDaily,
+  factOrgPrCommentTypeDaily,
   dimIde,
   dimFeature,
   dimLanguage,
@@ -45,6 +47,8 @@ import {
   transformToFactCli,
   transformToFactLanguageModels,
   transformToFactOrgAggregate,
+  transformToFactOrgAdoptionPhase,
+  transformToFactOrgPrCommentTypes,
   extractUniqueIdes,
   extractUniqueFeatures,
   extractUniqueLanguages,
@@ -52,7 +56,7 @@ import {
   extractUniqueOrgIds,
   computeRecordHash,
 } from "./transform";
-import { eq, sql, and, inArray } from "drizzle-orm";
+import { eq, sql, and, inArray, isNull } from "drizzle-orm";
 
 const BATCH_SIZE = 200;
 
@@ -240,6 +244,141 @@ async function ensureUsers(
 }
 
 /**
+ * Persist an entity-level aggregate report into `fact_org_aggregate_daily` plus
+ * the phase-cohort and PR comment-type child tables. Uses delete-then-insert
+ * keyed by (day, scope, org) so re-ingest is idempotent — the nullable org_id at
+ * enterprise scope makes ON CONFLICT upserts unreliable (NULLs are distinct
+ * under the unique index). Returns the number of aggregate day rows persisted.
+ */
+export async function persistOrgAggregates(
+  aggregateRecords: CopilotAggregateRecord[],
+  orgMap: Map<string, number>,
+  log: (msg: string) => void = () => {},
+): Promise<number> {
+  let aggregateInserted = 0;
+  for (const aggRecord of aggregateRecords) {
+    const row = transformToFactOrgAggregate(aggRecord);
+    const resolvedOrgId = row.orgLogin ? orgMap.get(row.orgLogin) ?? null : null;
+    const phaseRows = transformToFactOrgAdoptionPhase(aggRecord);
+    const commentRows = transformToFactOrgPrCommentTypes(aggRecord);
+
+    await db.transaction(async (tx) => {
+      const orgPredicate = resolvedOrgId === null
+        ? isNull(factOrgAggregateDaily.orgId)
+        : eq(factOrgAggregateDaily.orgId, resolvedOrgId);
+
+      // 1) Headline aggregate row.
+      await tx
+        .delete(factOrgAggregateDaily)
+        .where(
+          and(
+            eq(factOrgAggregateDaily.day, row.day),
+            eq(factOrgAggregateDaily.scope, row.scope),
+            orgPredicate,
+          ),
+        );
+      await tx.insert(factOrgAggregateDaily).values({
+        day: row.day,
+        orgId: resolvedOrgId,
+        scope: row.scope,
+        dailyActiveUsers: row.dailyActiveUsers,
+        weeklyActiveUsers: row.weeklyActiveUsers,
+        monthlyActiveUsers: row.monthlyActiveUsers,
+        monthlyActiveAgentUsers: row.monthlyActiveAgentUsers,
+        monthlyActiveChatUsers: row.monthlyActiveChatUsers,
+        dailyActiveCliUsers: row.dailyActiveCliUsers,
+        dailyActiveCloudAgentUsers: row.dailyActiveCloudAgentUsers,
+        weeklyActiveCloudAgentUsers: row.weeklyActiveCloudAgentUsers,
+        monthlyActiveCloudAgentUsers: row.monthlyActiveCloudAgentUsers,
+        dailyActiveCodeReviewUsers: row.dailyActiveCodeReviewUsers,
+        weeklyActiveCodeReviewUsers: row.weeklyActiveCodeReviewUsers,
+        monthlyActiveCodeReviewUsers: row.monthlyActiveCodeReviewUsers,
+        dailyPassiveCodeReviewUsers: row.dailyPassiveCodeReviewUsers,
+        weeklyPassiveCodeReviewUsers: row.weeklyPassiveCodeReviewUsers,
+        monthlyPassiveCodeReviewUsers: row.monthlyPassiveCodeReviewUsers,
+        prTotalCreated: row.prTotalCreated,
+        prTotalReviewed: row.prTotalReviewed,
+        prTotalMerged: row.prTotalMerged,
+        prMedianMinutesToMerge: row.prMedianMinutesToMerge,
+        prTotalSuggestions: row.prTotalSuggestions,
+        prTotalAppliedSuggestions: row.prTotalAppliedSuggestions,
+        prTotalCreatedByCopilot: row.prTotalCreatedByCopilot,
+        prTotalReviewedByCopilot: row.prTotalReviewedByCopilot,
+        prTotalMergedCreatedByCopilot: row.prTotalMergedCreatedByCopilot,
+        prTotalMergedReviewedByCopilot: row.prTotalMergedReviewedByCopilot,
+        prMedianMinutesToMergeCopilotAuthored: row.prMedianMinutesToMergeCopilotAuthored,
+        prMedianMinutesToMergeCopilotReviewed: row.prMedianMinutesToMergeCopilotReviewed,
+        prTotalCopilotSuggestions: row.prTotalCopilotSuggestions,
+        prTotalCopilotAppliedSuggestions: row.prTotalCopilotAppliedSuggestions,
+      });
+
+      // 2) Per-phase cohort outcomes.
+      await tx
+        .delete(factOrgAdoptionPhaseDaily)
+        .where(
+          and(
+            eq(factOrgAdoptionPhaseDaily.day, row.day),
+            eq(factOrgAdoptionPhaseDaily.scope, row.scope),
+            resolvedOrgId === null
+              ? isNull(factOrgAdoptionPhaseDaily.orgId)
+              : eq(factOrgAdoptionPhaseDaily.orgId, resolvedOrgId),
+          ),
+        );
+      if (phaseRows.length > 0) {
+        await tx.insert(factOrgAdoptionPhaseDaily).values(
+          phaseRows.map((p) => ({
+            day: p.day,
+            orgId: resolvedOrgId,
+            scope: p.scope,
+            phaseNumber: p.phaseNumber,
+            phaseLabel: p.phaseLabel,
+            totalEngagedUsers: p.totalEngagedUsers,
+            avgUserInitiatedInteractions: p.avgUserInitiatedInteractions,
+            avgCodeGenerationActivities: p.avgCodeGenerationActivities,
+            avgCodeAcceptanceActivities: p.avgCodeAcceptanceActivities,
+            avgLocAdded: p.avgLocAdded,
+            avgLocDeleted: p.avgLocDeleted,
+            avgPullRequestsCreated: p.avgPullRequestsCreated,
+            avgPullRequestsMerged: p.avgPullRequestsMerged,
+            avgPullRequestsReviewed: p.avgPullRequestsReviewed,
+            avgPullRequestsMedianMinutesToMerge: p.avgPullRequestsMedianMinutesToMerge,
+          })),
+        );
+      }
+
+      // 3) PR copilot suggestions by comment type.
+      await tx
+        .delete(factOrgPrCommentTypeDaily)
+        .where(
+          and(
+            eq(factOrgPrCommentTypeDaily.day, row.day),
+            eq(factOrgPrCommentTypeDaily.scope, row.scope),
+            resolvedOrgId === null
+              ? isNull(factOrgPrCommentTypeDaily.orgId)
+              : eq(factOrgPrCommentTypeDaily.orgId, resolvedOrgId),
+          ),
+        );
+      if (commentRows.length > 0) {
+        await tx.insert(factOrgPrCommentTypeDaily).values(
+          commentRows.map((c) => ({
+            day: c.day,
+            orgId: resolvedOrgId,
+            scope: c.scope,
+            commentType: c.commentType,
+            totalCopilotSuggestions: c.totalCopilotSuggestions,
+            totalCopilotAppliedSuggestions: c.totalCopilotAppliedSuggestions,
+          })),
+        );
+      }
+    });
+
+    aggregateInserted++;
+  }
+  log(`Aggregate records loaded: ${aggregateInserted}`);
+  return aggregateInserted;
+}
+
+/**
  * Core loading logic shared by both API and file-upload ingest modes.
  * Stores raw JSON, upserts dimensions/users, and loads all fact tables.
  * Uses content hashing to detect and skip duplicate records.
@@ -310,9 +449,15 @@ async function loadRecords(
   await ensureUsers(records, orgMap, orgIdToKeyMap);
   log("User dimension updated");
 
+  let aggregateInserted = 0;
   if (toProcess.length === 0) {
-    log("All records are duplicates — nothing to process");
-    return { inserted: 0, skipped, aggregateInserted: 0 };
+    if (aggregateRecords?.length) {
+      log(`All user records are duplicates — loading ${aggregateRecords.length} aggregate record(s)`);
+      aggregateInserted = await persistOrgAggregates(aggregateRecords, orgMap, log);
+    } else {
+      log("All records are duplicates — nothing to process");
+    }
+    return { inserted: 0, skipped, aggregateInserted };
   }
 
   // Store raw JSON with content hash
@@ -584,60 +729,10 @@ async function loadRecords(
     }
   }
 
-  // Load aggregate records (PR metrics, active user counts)
-  let aggregateInserted = 0;
+  // Load aggregate records (active-user counts, PR metrics, phase cohorts, comment types).
   if (aggregateRecords?.length) {
-    log(`Loading ${aggregateRecords.length} aggregate records (PR metrics)…`);
-    for (const aggRecord of aggregateRecords) {
-      const row = transformToFactOrgAggregate(aggRecord);
-      const resolvedOrgId = row.orgLogin ? orgMap.get(row.orgLogin) ?? null : null;
-
-      await db
-        .insert(factOrgAggregateDaily)
-        .values({
-          day: row.day,
-          orgId: resolvedOrgId,
-          scope: row.scope,
-          dailyActiveUsers: row.dailyActiveUsers,
-          weeklyActiveUsers: row.weeklyActiveUsers,
-          monthlyActiveUsers: row.monthlyActiveUsers,
-          monthlyActiveAgentUsers: row.monthlyActiveAgentUsers,
-          monthlyActiveChatUsers: row.monthlyActiveChatUsers,
-          dailyActiveCliUsers: row.dailyActiveCliUsers,
-          prTotalCreated: row.prTotalCreated,
-          prTotalReviewed: row.prTotalReviewed,
-          prTotalMerged: row.prTotalMerged,
-          prMedianMinutesToMerge: row.prMedianMinutesToMerge,
-          prTotalSuggestions: row.prTotalSuggestions,
-          prTotalAppliedSuggestions: row.prTotalAppliedSuggestions,
-          prTotalCreatedByCopilot: row.prTotalCreatedByCopilot,
-          prTotalReviewedByCopilot: row.prTotalReviewedByCopilot,
-          prTotalMergedCreatedByCopilot: row.prTotalMergedCreatedByCopilot,
-          prTotalMergedReviewedByCopilot: row.prTotalMergedReviewedByCopilot,
-          prMedianMinutesToMergeCopilotAuthored: row.prMedianMinutesToMergeCopilotAuthored,
-          prMedianMinutesToMergeCopilotReviewed: row.prMedianMinutesToMergeCopilotReviewed,
-          prTotalCopilotSuggestions: row.prTotalCopilotSuggestions,
-          prTotalCopilotAppliedSuggestions: row.prTotalCopilotAppliedSuggestions,
-        })
-        .onConflictDoUpdate({
-          target: [factOrgAggregateDaily.day, factOrgAggregateDaily.orgId, factOrgAggregateDaily.scope],
-          set: {
-            dailyActiveUsers: sql`EXCLUDED.daily_active_users`,
-            weeklyActiveUsers: sql`EXCLUDED.weekly_active_users`,
-            monthlyActiveUsers: sql`EXCLUDED.monthly_active_users`,
-            prTotalCreated: sql`EXCLUDED.pr_total_created`,
-            prTotalReviewed: sql`EXCLUDED.pr_total_reviewed`,
-            prTotalMerged: sql`EXCLUDED.pr_total_merged`,
-            prMedianMinutesToMerge: sql`EXCLUDED.pr_median_minutes_to_merge`,
-            prTotalCreatedByCopilot: sql`EXCLUDED.pr_total_created_by_copilot`,
-            prTotalReviewedByCopilot: sql`EXCLUDED.pr_total_reviewed_by_copilot`,
-            prTotalMergedCreatedByCopilot: sql`EXCLUDED.pr_total_merged_created_by_copilot`,
-          },
-        });
-
-      aggregateInserted++;
-    }
-    log(`Aggregate records loaded: ${aggregateInserted}`);
+    log(`Loading ${aggregateRecords.length} aggregate records (active users, PR metrics, cohorts)…`);
+    aggregateInserted = await persistOrgAggregates(aggregateRecords, orgMap, log);
   }
 
   log(`All fact tables loaded — ${inserted} records processed, ${skipped} duplicates skipped, ${aggregateInserted} aggregates`);
@@ -896,7 +991,7 @@ export async function ingestCopilotUsage(opts: IngestOptions): Promise<{
       log(`Unique users in dataset: ${uniqueUsers.size}`);
     }
 
-    if (records.length === 0) {
+    if (records.length === 0 && aggregateRecords.length === 0) {
       log("No records returned from GitHub API. Nothing to ingest.");
       console.info("No records fetched. Nothing to ingest.");
       await db

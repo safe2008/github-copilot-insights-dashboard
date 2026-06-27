@@ -140,32 +140,43 @@ async function discoverUserOrgs(
   }
 }
 
-/** GET /enterprises/{slug}/organizations — first org (representative) + check row. */
+/** POST /graphql enterprise.organizations — first org (representative) + check row. */
 async function discoverEnterpriseOrgs(
   token: string,
-  encodedSlug: string,
   displaySlug: string,
 ): Promise<{ check: AccessCheckItem; firstOrg: string | null }> {
   const meta: ProbeMeta = {
     id: "ent_orgs",
     group: "enterprise",
     label: "Enterprise organizations",
-    endpoint: `GET /enterprises/${displaySlug}/organizations`,
-    requiredScope: "read:enterprise",
+    endpoint: "POST /graphql (enterprise.organizations)",
+    requiredScope: "read:org",
   };
   try {
-    const res = await fetch(`${GITHUB_API_BASE}/enterprises/${encodedSlug}/organizations?per_page=100`, {
-      headers: ghHeaders(token),
+    const res = await fetch(`${GITHUB_API_BASE}/graphql`, {
+      method: "POST",
+      headers: { ...ghHeaders(token), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: "query($slug:String!){ enterprise(slug:$slug){ organizations(first:100){ nodes{ login } } } }",
+        variables: { slug: displaySlug },
+      }),
     });
-    const { status, detail } = classify(res.status);
     if (res.ok) {
-      const list = (await res.json()) as Array<{ login: string; id: number }>;
+      const json = (await res.json()) as {
+        data?: { enterprise?: { organizations?: { nodes?: Array<{ login: string }> } } };
+        errors?: Array<{ message: string }>;
+      };
+      if (json.errors?.length) {
+        return { check: { ...meta, status: "error", httpStatus: res.status, detail: json.errors[0].message }, firstOrg: null };
+      }
+      const nodes = json.data?.enterprise?.organizations?.nodes ?? [];
       return {
-        check: { ...meta, status, httpStatus: res.status, detail: `${list.length} organization(s) in enterprise` },
-        firstOrg: list[0]?.login ?? null,
+        check: { ...meta, status: "ok", httpStatus: res.status, detail: `${nodes.length} organization(s) in enterprise` },
+        firstOrg: nodes[0]?.login ?? null,
       };
     }
     void res.body?.cancel();
+    const { status, detail } = classify(res.status);
     return { check: { ...meta, status, httpStatus: res.status, detail }, firstOrg: null };
   } catch {
     return { check: { ...meta, status: "error", httpStatus: 0, detail: "Network error" }, firstOrg: null };
@@ -260,7 +271,7 @@ export async function checkGitHubAccess(
   // 2. Discovery — orgs (membership), enterprise orgs, and a representative team.
   const [userOrgsDisc, entOrgsDisc, teamDisc] = await Promise.all([
     discoverUserOrgs(token),
-    slug ? discoverEnterpriseOrgs(token, slug, enterpriseSlug as string) : Promise.resolve(null),
+    slug ? discoverEnterpriseOrgs(token, enterpriseSlug as string) : Promise.resolve(null),
     slug ? discoverFirstTeam(token, slug, enterpriseSlug as string) : Promise.resolve(null),
   ]);
 

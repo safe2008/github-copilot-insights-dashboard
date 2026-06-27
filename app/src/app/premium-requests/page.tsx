@@ -148,12 +148,27 @@ const MODEL_COLORS = [
   "#3b82f6", "#6366f1", "#14b8a6", "#f59e0b", "#10b981",
 ];
 
+const PREMIUM_REQUESTS_LAST_YEAR = 2026;
+const PREMIUM_REQUESTS_LAST_MONTH = 5;
+
+function isAfterPremiumRequestsCutoff(year: number, month: number) {
+  return year > PREMIUM_REQUESTS_LAST_YEAR ||
+    (year === PREMIUM_REQUESTS_LAST_YEAR && month > PREMIUM_REQUESTS_LAST_MONTH);
+}
+
+function clampPremiumRequestsMonth(year: number, month: number) {
+  return isAfterPremiumRequestsCutoff(year, month)
+    ? { year: PREMIUM_REQUESTS_LAST_YEAR, month: PREMIUM_REQUESTS_LAST_MONTH }
+    : { year, month };
+}
+
 export default function PremiumRequestsPage() {
   const { commonOptions: barOpts, doughnutOptions: doughnutOpts } = useChartOptions();
   const { t } = useTranslation();
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
+  const initialPeriod = clampPremiumRequestsMonth(now.getFullYear(), now.getMonth() + 1);
+  const [year, setYear] = useState(initialPeriod.year);
+  const [month, setMonth] = useState(initialPeriod.month);
   const [modelFilter, setModelFilter] = useState("");
   const [orgFilter, setOrgFilter] = useState("");
   const [userFilter, setUserFilter] = useState("");
@@ -383,6 +398,7 @@ export default function PremiumRequestsPage() {
     let y = year;
     if (m < 1) { m = 12; y--; }
     if (m > 12) { m = 1; y++; }
+    if (isAfterPremiumRequestsCutoff(y, m)) return;
     setYear(y);
     setMonth(m);
   };
@@ -434,6 +450,7 @@ export default function PremiumRequestsPage() {
   const daysToExhaustion = avgDailyRequests > 0 ? Math.ceil(quotaRemaining / avgDailyRequests) : null;
 
   const currentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
+  const atPremiumRequestsCutoff = year === PREMIUM_REQUESTS_LAST_YEAR && month === PREMIUM_REQUESTS_LAST_MONTH;
   const projectedEomSpend = currentMonth && elapsedDays > 0
     ? (totals.netAmount / elapsedDays) * daysInMonth(year, month)
     : totals.netAmount;
@@ -465,11 +482,14 @@ export default function PremiumRequestsPage() {
         </span>
         <button
           onClick={() => goMonth(1)}
-          disabled={year === now.getFullYear() && month === now.getMonth() + 1}
+          disabled={atPremiumRequestsCutoff}
           className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
         >
           Next →
         </button>
+        <span className="text-xs text-gray-500 dark:text-gray-400">
+          {t("premiumRequests.availableThrough")}
+        </span>
       </div>
 
       <Card title="Drill-down Filters" subtitle="Slice premium usage and spend by model, org, user, and team">

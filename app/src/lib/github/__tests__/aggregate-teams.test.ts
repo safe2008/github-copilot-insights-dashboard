@@ -1,6 +1,32 @@
-import { describe, it, expect } from "vitest";
-import { flattenAggregateReport, buildUserTeamMap } from "../copilot-api";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { flattenAggregateReport, buildUserTeamMap, fetchMultiOrgCopilotUsage } from "../copilot-api";
 import type { AggregateReportLine, UserTeamRecord } from "@/types/copilot-api";
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status >= 200 && status < 300 ? "OK" : "Error",
+    headers: { get: () => null },
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+    body: { cancel: () => {} },
+  } as unknown as Response;
+}
+
+function textResponse(body: string, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status >= 200 && status < 300 ? "OK" : "Error",
+    headers: { get: () => null },
+    json: async () => JSON.parse(body),
+    text: async () => body,
+    body: { cancel: () => {} },
+  } as unknown as Response;
+}
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("flattenAggregateReport", () => {
   it("expands day_totals into one record per day and tags the scope", () => {
@@ -49,6 +75,46 @@ describe("flattenAggregateReport", () => {
   it("ignores lines with neither day_totals nor a top-level day", () => {
     const lines: AggregateReportLine[] = [{ enterprise_id: "1" }];
     expect(flattenAggregateReport(lines, "enterprise")).toEqual([]);
+  });
+
+  it("flattens wrapped organization aggregate downloads during multi-org fetch", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes("/reports/users-28-day/latest")) {
+        return jsonResponse({ download_links: [] });
+      }
+      if (u.includes("/reports/organization-28-day/latest")) {
+        return jsonResponse({ download_links: ["https://download.example/agg.ndjson"] });
+      }
+      if (u === "https://download.example/agg.ndjson") {
+        return textResponse(
+          JSON.stringify({
+            organization_id: "99",
+            day_totals: [
+              { day: "2026-06-01", daily_active_users: 2, pull_requests: { total_created: 3 } },
+            ],
+          }) + "\n",
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchMultiOrgCopilotUsage({
+      enterpriseSlug: "e",
+      token: "t",
+      orgLogins: ["acme"],
+    });
+
+    expect(result.records).toEqual([]);
+    expect(result.aggregateRecords).toHaveLength(1);
+    expect(result.aggregateRecords[0]).toMatchObject({
+      day: "2026-06-01",
+      daily_active_users: 2,
+      _scope: "organization",
+      _orgLogin: "acme",
+    });
+    expect(result.aggregateRecords[0].pull_requests?.total_created).toBe(3);
   });
 });
 

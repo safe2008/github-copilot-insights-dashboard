@@ -1,0 +1,12 @@
+{
+  "created_at": "2025-01-22T22:51:07+02:00",
+  "updated_at": "2025-01-21T23:00:00+02:00",
+  "pending_cancellation_date": null,
+  "last_activity_at": "2026-06-26T19:09:44+03:00",
+  "last_activity_editor": "vscode/1.99.0/copilot/1.250.0",
+  "last_authenticated_at": "2026-06-26T16:09:45Z",
+  "plan_type": "enterprise",
+  "assignee": { "login": "octocat-1", "id": 1001, "type": "User", "site_admin": false },
+  "assigning_team": null,
+  "organization": { "login": "octo-org", "id": 200001 }
+}

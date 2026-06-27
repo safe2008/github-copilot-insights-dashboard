@@ -3,6 +3,8 @@ import {
   factCopilotUsageDaily,
   factAiCreditUsage,
   factOrgAggregateDaily,
+  factOrgAdoptionPhaseDaily,
+  factOrgPrCommentTypeDaily,
   factCopilotSeatAssignment,
   factUserLanguageDaily,
   factUserIdeDaily,
@@ -19,7 +21,7 @@ import {
   githubAccessCheckSnapshot,
 } from "@/lib/db/schema";
 import { getGitHubConfig } from "@/lib/db/settings";
-import { sql, and, gte, lte, eq, desc, isNotNull } from "drizzle-orm";
+import { sql, and, gte, lte, eq, desc, isNotNull, isNull } from "drizzle-orm";
 import {
   AI_ADOPTION_PHASES,
   AI_ADOPTION_PHASE_KEYS,
@@ -288,6 +290,7 @@ async function enterpriseContext(w: InsightWindow) {
           assigningTeamSlug: factCopilotSeatAssignment.assigningTeamSlug,
           pendingCancellationDate: factCopilotSeatAssignment.pendingCancellationDate,
           lastActivityAt: factCopilotSeatAssignment.lastActivityAt,
+          lastAuthenticatedAt: factCopilotSeatAssignment.lastAuthenticatedAt,
           lastActivityEditor: factCopilotSeatAssignment.lastActivityEditor,
         })
         .from(factCopilotSeatAssignment)
@@ -339,6 +342,9 @@ async function enterpriseContext(w: InsightWindow) {
       .map((row) => row.assigneeLogin),
   );
   const neverActiveSeatAssignees = new Set(seatRows.filter((row) => !row.lastActivityAt).map((row) => row.assigneeLogin));
+  const neverAuthenticatedSeatAssignees = new Set(
+    seatRows.filter((row) => !row.lastAuthenticatedAt).map((row) => row.assigneeLogin),
+  );
   const planCounts = seatRows.reduce<Record<string, number>>((acc, row) => {
     acc[row.planType] = (acc[row.planType] ?? 0) + 1;
     return acc;
@@ -386,6 +392,7 @@ async function enterpriseContext(w: InsightWindow) {
       activeUsers: latestSeatDate ? uniqueSeatAssignees.size - inactiveSeatAssignees.size : activeUsers,
       idleSeatsApprox: latestSeatDate ? inactiveSeatAssignees.size : Math.max(0, licensedUsers - activeUsers),
       neverActiveSeats: latestSeatDate ? neverActiveSeatAssignees.size : null,
+      neverAuthenticatedSeats: latestSeatDate ? neverAuthenticatedSeatAssignees.size : null,
       idleSeatRatePct: latestSeatDate
         ? pct(inactiveSeatAssignees.size, uniqueSeatAssignees.size)
         : pct(Math.max(0, licensedUsers - activeUsers), licensedUsers),
@@ -568,14 +575,73 @@ async function adoptionSnapshot(w: InsightWindow) {
   const multiAgentUsers = counts.get(3) ?? 0;
   const advancedUsers = agentFirstUsers + multiAgentUsers;
   const earlyOrNoCohortUsers = (counts.get(0) ?? 0) + codeFirstUsers;
-  const cohortRows = AI_ADOPTION_PHASES.map((p) => ({
-    phase: p,
-    key: AI_ADOPTION_PHASE_KEYS[p],
-    label: AI_ADOPTION_PHASE_LABELS[p],
-    users: counts.get(p) ?? 0,
-    sharePct: pct(counts.get(p) ?? 0, totalClassifiedUsers),
-  }));
+
+  // GitHub-computed per-phase outcomes from the latest matching aggregate day.
+  // These measured per-cohort averages cannot be derived from the per-user facts
+  // — they use GitHub's own engaged-user denominator.
+  const phaseOutcomeConds = [
+    gte(factOrgAdoptionPhaseDaily.day, w.start),
+    lte(factOrgAdoptionPhaseDaily.day, w.end),
+    eq(factOrgAdoptionPhaseDaily.scope, w.orgId !== undefined ? "organization" : "enterprise"),
+    w.orgId !== undefined
+      ? eq(factOrgAdoptionPhaseDaily.orgId, w.orgId)
+      : isNull(factOrgAdoptionPhaseDaily.orgId),
+  ];
+  const phaseOutcomeRows = await db
+    .select({
+      day: factOrgAdoptionPhaseDaily.day,
+      phaseNumber: factOrgAdoptionPhaseDaily.phaseNumber,
+      totalEngagedUsers: factOrgAdoptionPhaseDaily.totalEngagedUsers,
+      avgPullRequestsMerged: factOrgAdoptionPhaseDaily.avgPullRequestsMerged,
+      avgPullRequestsReviewed: factOrgAdoptionPhaseDaily.avgPullRequestsReviewed,
+      avgPullRequestsMedianMinutesToMerge: factOrgAdoptionPhaseDaily.avgPullRequestsMedianMinutesToMerge,
+      avgLocAdded: factOrgAdoptionPhaseDaily.avgLocAdded,
+      avgCodeAcceptanceActivities: factOrgAdoptionPhaseDaily.avgCodeAcceptanceActivities,
+    })
+    .from(factOrgAdoptionPhaseDaily)
+    .where(and(...phaseOutcomeConds));
+  const latestPhaseDay = phaseOutcomeRows.reduce<string | null>(
+    (max, r) => (max === null || r.day > max ? r.day : max),
+    null,
+  );
+  const outcomeByPhase = new Map<number, (typeof phaseOutcomeRows)[number]>();
+  for (const r of phaseOutcomeRows) {
+    if (r.day === latestPhaseDay) outcomeByPhase.set(r.phaseNumber, r);
+  }
+  const numFrom = (v: string | null): number | null => (v != null ? Number(v) : null);
+
+  const cohortRows = AI_ADOPTION_PHASES.map((p) => {
+    const o = outcomeByPhase.get(p);
+    return {
+      phase: p,
+      key: AI_ADOPTION_PHASE_KEYS[p],
+      label: AI_ADOPTION_PHASE_LABELS[p],
+      users: counts.get(p) ?? 0,
+      sharePct: pct(counts.get(p) ?? 0, totalClassifiedUsers),
+      outcomes: o
+        ? {
+            engagedUsers: o.totalEngagedUsers ?? 0,
+            avgPrsMerged: numFrom(o.avgPullRequestsMerged),
+            avgPrsReviewed: numFrom(o.avgPullRequestsReviewed),
+            avgMinutesToMerge: numFrom(o.avgPullRequestsMedianMinutesToMerge),
+            avgLocAdded: numFrom(o.avgLocAdded),
+            avgAcceptedActivities: numFrom(o.avgCodeAcceptanceActivities),
+          }
+        : null,
+    };
+  });
   const dominantCohort = [...cohortRows].sort((a, b) => b.users - a.users)[0] ?? null;
+
+  // Measured productivity uplift: best advanced cohort (multi-agent, else
+  // agent-first) vs code-first, in average pull requests merged per engaged user.
+  const codeFirstMerged = outcomeByPhase.get(1)?.avgPullRequestsMerged ?? null;
+  const advancedMerged =
+    outcomeByPhase.get(3)?.avgPullRequestsMerged ?? outcomeByPhase.get(2)?.avgPullRequestsMerged ?? null;
+  const prMergedUpliftAdvancedVsCodeFirst =
+    codeFirstMerged != null && advancedMerged != null
+      ? Number((Number(advancedMerged) - Number(codeFirstMerged)).toFixed(2))
+      : null;
+  const hasCohortOutcomes = outcomeByPhase.size > 0;
 
   return {
     window: w,
@@ -596,6 +662,8 @@ async function adoptionSnapshot(w: InsightWindow) {
         totalClassifiedUsers === 0 ? "unknown" : (pct(advancedUsers, totalClassifiedUsers) ?? 0) >= 50 ? "advanced" : (pct(advancedUsers, totalClassifiedUsers) ?? 0) >= 20 ? "developing" : "early",
       primaryEnablementFocus:
         earlyOrNoCohortUsers >= advancedUsers ? "move_code_first_users_to_agent_workflows" : "scale_multi_agent_practices",
+      prMergedUpliftAdvancedVsCodeFirst,
+      cohortOutcomesAvailable: hasCohortOutcomes,
     },
     dataQuality: dataQuality({
       window: w,
@@ -605,6 +673,7 @@ async function adoptionSnapshot(w: InsightWindow) {
         { name: "cohort_distribution", present: cohortRows.some((row) => row.users > 0) },
         { name: "advanced_adoption_signal", present: advancedUsers > 0 },
         { name: "dominant_cohort", present: Boolean(dominantCohort && dominantCohort.users > 0) },
+        { name: "cohort_outcomes", present: hasCohortOutcomes },
       ],
       warnings: totalClassifiedUsers === 0 ? ["No AI adoption phase classifications were found for this window."] : [],
     }),
@@ -730,6 +799,10 @@ async function executiveSnapshot(w: InsightWindow) {
         dau: factOrgAggregateDaily.dailyActiveUsers,
         wau: factOrgAggregateDaily.weeklyActiveUsers,
         mau: factOrgAggregateDaily.monthlyActiveUsers,
+        cloudAgentDaily: factOrgAggregateDaily.dailyActiveCloudAgentUsers,
+        cloudAgentMonthly: factOrgAggregateDaily.monthlyActiveCloudAgentUsers,
+        codeReviewMonthly: factOrgAggregateDaily.monthlyActiveCodeReviewUsers,
+        passiveCodeReviewMonthly: factOrgAggregateDaily.monthlyPassiveCodeReviewUsers,
       })
       .from(factOrgAggregateDaily)
       .where(and(lte(factOrgAggregateDaily.day, w.end), eq(factOrgAggregateDaily.scope, "enterprise")))
@@ -826,6 +899,16 @@ async function executiveSnapshot(w: InsightWindow) {
       latestMonthlyActiveUsers: mau,
       stickinessDauOverMau:
         dau != null && mau ? Number((Number(dau) / Number(mau)).toFixed(2)) : null,
+      surfaceEngagement: {
+        cloudAgentDailyActiveUsers: agg?.cloudAgentDaily ?? null,
+        cloudAgentMonthlyActiveUsers: agg?.cloudAgentMonthly ?? null,
+        cloudAgentStickiness:
+          agg?.cloudAgentDaily != null && agg?.cloudAgentMonthly
+            ? Number((Number(agg.cloudAgentDaily) / Number(agg.cloudAgentMonthly)).toFixed(2))
+            : null,
+        codeReviewActiveMonthlyUsers: agg?.codeReviewMonthly ?? null,
+        codeReviewPassiveMonthlyUsers: agg?.passiveCodeReviewMonthly ?? null,
+      },
     },
     activity: {
       activeUsers: usage.activeUsers,
@@ -915,7 +998,7 @@ async function executiveSnapshot(w: InsightWindow) {
 
 async function deliverySnapshot(w: InsightWindow) {
   const prev = previousWindow(w);
-  const [rows, prevDelivery] = await Promise.all([
+  const [rows, prevDelivery, commentTypeRows] = await Promise.all([
     db
       .select({
         created: sql<number>`COALESCE(SUM(${factOrgAggregateDaily.prTotalCreated}), 0)`,
@@ -936,7 +1019,31 @@ async function deliverySnapshot(w: InsightWindow) {
         ),
       ),
     deliveryTotals(prev),
+    db
+      .select({
+        commentType: factOrgPrCommentTypeDaily.commentType,
+        suggestions: sql<number>`COALESCE(SUM(${factOrgPrCommentTypeDaily.totalCopilotSuggestions}), 0)`,
+        applied: sql<number>`COALESCE(SUM(${factOrgPrCommentTypeDaily.totalCopilotAppliedSuggestions}), 0)`,
+      })
+      .from(factOrgPrCommentTypeDaily)
+      .where(
+        and(
+          gte(factOrgPrCommentTypeDaily.day, w.start),
+          lte(factOrgPrCommentTypeDaily.day, w.end),
+          eq(factOrgPrCommentTypeDaily.scope, "enterprise"),
+        ),
+      )
+      .groupBy(factOrgPrCommentTypeDaily.commentType),
   ]);
+
+  // Apply rate by PR suggestion comment type (signal-to-noise of Copilot review).
+  const suggestionsByCommentType = commentTypeRows
+    .map((c) => {
+      const suggestions = Number(c.suggestions);
+      const applied = Number(c.applied);
+      return { commentType: c.commentType, suggestions, applied, applyRatePct: pct(applied, suggestions) };
+    })
+    .sort((a, b) => b.suggestions - a.suggestions);
 
   const r = rows[0];
   const prCreated = Number(r?.created ?? 0);
@@ -963,6 +1070,7 @@ async function deliverySnapshot(w: InsightWindow) {
     copilotSuggestions,
     copilotAppliedSuggestions,
     suggestionApplicationRatePct: pct(copilotAppliedSuggestions, copilotSuggestions),
+    suggestionsByCommentType,
     avgMedianMinutesToMerge:
       r?.avgMedianMinutesToMerge != null ? Number(Number(r.avgMedianMinutesToMerge).toFixed(1)) : null,
     businessSignals: {
@@ -982,6 +1090,7 @@ async function deliverySnapshot(w: InsightWindow) {
         { name: "copilot_authored_or_reviewed_prs", present: copilotAuthoredPrs > 0 || copilotReviewedPrs > 0 },
         { name: "copilot_suggestions", present: copilotSuggestions > 0 },
         { name: "time_to_merge", present: r?.avgMedianMinutesToMerge != null },
+        { name: "comment_type_breakdown", present: suggestionsByCommentType.length > 0 },
       ],
     }),
   };

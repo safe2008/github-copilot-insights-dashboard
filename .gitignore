@@ -153,3 +153,4 @@ samples/
 .playwright-mcp/
 .private/
 .workspace/
+.DS_Store
