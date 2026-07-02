@@ -36,6 +36,7 @@ interface AllUser {
   effectivePlan: string;
   assignmentCount: number;
   lastActivityAt: string | null;
+  lastAuthenticatedAt: string | null;
   lastEditor: string | null;
   earliestAssignment: string;
   status: string;
@@ -59,6 +60,7 @@ interface BusinessValueData {
   activeCount: number;
   inactiveCount: number;
   neverActiveCount: number;
+  neverAuthenticatedCount: number;
   pendingCancellation: number;
   utilizationRate: number;
   totalMonthlyCost: number;
@@ -286,10 +288,11 @@ export default function BusinessValuePage() {
       <ReportBanner title={t("seats.aboutTitle")} body={t("seats.aboutBody")} />
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-7">
         <Kpi label={t("seats.totalSeats")} value={data.totalSeats} />
         <Kpi label={t("seats.activeUsers")} value={data.activeCount} color="text-green-600" />
         <Kpi label={t("seats.inactiveUsers")} value={data.inactiveCount} color="text-amber-600 dark:text-amber-400" />
+        <Kpi label={t("seats.neverAuthenticated")} value={data.neverAuthenticatedCount} color="text-red-600 dark:text-red-400" />
         <Kpi label={t("seats.monthlyCost")} value={fmt$(data.totalMonthlyCost)} />
         <Kpi label={t("seats.costPerActiveUser")} value={fmt$(data.costPerActiveUser)} />
         <Kpi label={t("seats.utilization")} value={`${data.utilizationRate}%`} color={data.utilizationRate >= 70 ? "text-green-600" : "text-amber-600 dark:text-amber-400"} />
@@ -507,6 +510,10 @@ export default function BusinessValuePage() {
             } },
             { key: "assignmentCount", header: "Assignments", align: "right", render: (value: unknown) => <span className="text-gray-700 dark:text-gray-300">{String(value)}</span> },
             { key: "lastActivityAt", header: "Last Activity", render: (value: unknown) => {
+              const v = value as string | null;
+              return <span className="text-xs text-gray-600 dark:text-gray-400">{v ? new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}</span>;
+            } },
+            { key: "lastAuthenticatedAt", header: t("seats.lastAuthenticated"), render: (value: unknown) => {
               const v = value as string | null;
               return <span className="text-xs text-gray-600 dark:text-gray-400">{v ? new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}</span>;
             } },

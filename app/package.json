@@ -2,7 +2,7 @@
   "name": "ghcp-dashboard",
   "version": "1.1.0",
   "private": true,
-  "packageManager": "pnpm@11.5.1",
+  "packageManager": "pnpm@11.9.0",
   "engines": {
     "node": ">=26"
   },
@@ -19,15 +19,15 @@
     "ingest": "tsx src/lib/etl/ingest.ts"
   },
   "dependencies": {
-    "@github/copilot-sdk": "^1.0.4",
+    "@github/copilot-sdk": "^1.0.5",
     "@gsap/react": "^2.1.2",
     "chart.js": "^4.5.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "gsap": "^3.15.0",
-    "html2canvas-pro": "^2.2.0",
+    "html2canvas-pro": "^2.2.1",
     "jspdf": "^4.2.1",
-    "lucide-react": "^1.21.0",
+    "lucide-react": "^1.22.0",
     "next": "^16.2.9",
     "postgres": "^3.4.9",
     "react": "^19.2.7",
@@ -41,16 +41,16 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
-    "@tailwindcss/postcss": "^4.3.1",
+    "@tailwindcss/postcss": "^4.3.2",
     "@types/node": "^26.0.1",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "drizzle-kit": "^0.31.10",
-    "eslint": "^10.5.0",
+    "eslint": "^10.6.0",
     "eslint-config-next": "^16.2.9",
-    "postcss": "^8.5.15",
-    "tailwindcss": "^4.3.1",
+    "postcss": "^8.5.16",
+    "tailwindcss": "^4.3.2",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"

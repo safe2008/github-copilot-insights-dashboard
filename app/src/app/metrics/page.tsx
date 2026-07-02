@@ -17,6 +17,9 @@ interface DashboardData {
     agentAdoptionRate: number;
     chatUsers: number;
     cliUsers: number;
+    cloudAgentUsers: number;
+    codeReviewActiveUsers: number;
+    codeReviewPassiveUsers: number;
     totalInteractions: number;
     totalCodeGen: number;
     totalCodeAccept: number;
@@ -438,6 +441,16 @@ export default function CopilotUsagePage() {
             <Kpi label={t("dashboard.totalInteractions")} value={kpi?.totalInteractions ?? 0} />
             <Kpi label={t("dashboard.codeAccepted")} value={kpi?.totalCodeAccept ?? 0} />
             <Kpi label={t("dashboard.topModel")} value={kpi?.mostUsedChatModel ?? "N/A"} small />
+          </div>
+
+          {/* Surface Engagement */}
+          <div>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{t("dashboard.surfaceEngagement")}</h2>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <Kpi label={t("dashboard.cloudAgentUsers")} value={kpi?.cloudAgentUsers ?? 0} />
+              <Kpi label={t("dashboard.codeReviewActiveUsers")} value={kpi?.codeReviewActiveUsers ?? 0} />
+              <Kpi label={t("dashboard.codeReviewPassiveUsers")} value={kpi?.codeReviewPassiveUsers ?? 0} />
+            </div>
           </div>
 
           {/* Daily + Weekly Active Users */}

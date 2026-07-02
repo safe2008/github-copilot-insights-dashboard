@@ -49,6 +49,7 @@ describe("aggregate transforms (2026-03-10 fields)", () => {
     expect(p3?.totalEngagedUsers).toBe(1);
     expect(p3?.avgPullRequestsMerged).toBe("4");
     expect(p3?.avgPullRequestsMedianMinutesToMerge).toBe("1.58");
+    expect(p3?.totalPullRequestsMerged).toBeNull();
     expect(p3?.scope).toBe("enterprise");
   });
 

@@ -57,7 +57,7 @@ export function ConfigurationBanner() {
                 : t("configBanner.missingSlug")}
           </p>
           <Link
-            href="/settings"
+            href="/settings/token"
             className="mt-2 inline-flex items-center text-sm font-medium text-amber-800 underline hover:text-amber-900 dark:text-amber-200 dark:hover:text-amber-100"
           >
             {t("configBanner.goToSettings")}

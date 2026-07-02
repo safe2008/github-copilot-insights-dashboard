@@ -177,6 +177,7 @@ export interface CopilotAggregateRecord {
 
   // Aggregate-level breakdowns (mirror the per-user arrays).
   totals_by_cli?: TotalsByCli;
+  totals_by_ide?: TotalsByIde[];
   totals_by_feature?: TotalsByFeature[];
   totals_by_language_feature?: TotalsByLanguageFeature[];
   totals_by_language_model?: TotalsByLanguageModel[];
@@ -202,6 +203,12 @@ export interface TotalsByAiAdoptionPhase {
   phase: string;
   phase_number: number;
   total_engaged_users: number;
+  /**
+   * Absolute count of pull requests merged by this phase's engaged users over
+   * the report window (Copilot Usage Metrics API, added 2026-07-02). Complements
+   * the per-user `avg_pull_requests_merged`.
+   */
+  total_pull_requests_merged?: number;
   avg_user_initiated_interactions?: number;
   avg_code_generation_activities?: number;
   avg_code_acceptance_activities?: number;

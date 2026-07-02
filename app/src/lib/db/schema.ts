@@ -484,6 +484,7 @@ export const factOrgAdoptionPhaseDaily = pgTable(
     avgPullRequestsMerged: numeric("avg_pull_requests_merged"),
     avgPullRequestsReviewed: numeric("avg_pull_requests_reviewed"),
     avgPullRequestsMedianMinutesToMerge: numeric("avg_pull_requests_median_minutes_to_merge"),
+    totalPullRequestsMerged: integer("total_pull_requests_merged"),
   },
   (table) => [
     uniqueIndex("idx_fact_org_phase_unique").on(table.day, table.orgId, table.scope, table.phaseNumber),

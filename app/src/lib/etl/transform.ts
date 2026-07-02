@@ -521,6 +521,7 @@ export interface FactOrgAdoptionPhaseRow {
   avgPullRequestsMerged: string | null;
   avgPullRequestsReviewed: string | null;
   avgPullRequestsMedianMinutesToMerge: string | null;
+  totalPullRequestsMerged: number | null;
 }
 
 /**
@@ -554,6 +555,7 @@ export function transformToFactOrgAdoptionPhase(
       avgPullRequestsMedianMinutesToMerge: numericOrNull(
         p.avg_pull_requests_median_minutes_to_merge
       ),
+      totalPullRequestsMerged: p.total_pull_requests_merged ?? null,
     }));
 }
 

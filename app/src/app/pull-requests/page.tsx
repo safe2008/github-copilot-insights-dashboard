@@ -51,6 +51,13 @@ interface OrgBreakdown {
   totalCopilotAppliedSuggestions: number;
 }
 
+interface CommentTypeRow {
+  commentType: string;
+  suggestions: number;
+  applied: number;
+  applyRatePct: number;
+}
+
 interface PRData {
   daily: DailyPR[];
   totals: {
@@ -70,6 +77,7 @@ interface PRData {
     avgMedianMinutesToMergeCopilotReviewed: number | null;
   };
   orgBreakdown: OrgBreakdown[];
+  suggestionsByCommentType: CommentTypeRow[];
 }
 
 /* ── Helpers ── */
@@ -321,6 +329,28 @@ export default function PullRequestsPage() {
               </Card>
               <div />
             </div>
+          )}
+
+          {/* Suggestion Apply Rate by Comment Type */}
+          {data.suggestionsByCommentType.length > 0 && (
+            <Card title={t("pullRequests.applyRateByCommentType")} subtitle={t("pullRequests.applyRateByCommentTypeDesc")}>
+              <DataTable
+                columns={[
+                  { key: "commentType", header: t("pullRequests.commentType") },
+                  { key: "suggestions", header: t("pullRequests.suggestions"), align: "right" as const, render: (value: unknown) => fmtNum(Number(value)) },
+                  { key: "applied", header: t("pullRequests.suggestionsApplied"), align: "right" as const, render: (value: unknown) => fmtNum(Number(value)) },
+                  { key: "applyRate", header: t("pullRequests.applyRate"), align: "right" as const },
+                ]}
+                data={data.suggestionsByCommentType.map((c) => ({
+                  commentType: c.commentType,
+                  suggestions: c.suggestions,
+                  applied: c.applied,
+                  applyRate: `${c.applyRatePct}%`,
+                }))}
+                defaultSortKey="suggestions"
+                defaultSortDir="desc"
+              />
+            </Card>
           )}
 
           {/* Org Breakdown Table */}

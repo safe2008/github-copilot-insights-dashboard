@@ -39,31 +39,33 @@ text, icons, borders, and chart strokes.
 
 ## Typography
 
-Three typefaces, loaded once via `next/font` (self-hosted, zero layout shift) and
-exposed as CSS variables that feed the Tailwind theme. Never hardcode a
-`font-family`; rely on the `font-sans` (default) and `font-mono` utilities.
+GitHub's brand typefaces, self-hosted once via `next/font/local` (zero layout
+shift) with the OS system stack as fallback, exposed as CSS variables that feed
+the Tailwind theme. Never hardcode a `font-family`; rely on the `font-sans`
+(default) and `font-mono` utilities.
 
-- **Sans / UI (default)** — **Sora**, geometric low-contrast sans-serif. Used for
-  all Latin scripts (English, Spanish, French). Variable weights 100–800. Inherited
-  from `html`; no class needed. Var `--font-sora` → `--font-sans`.
-- **Arabic** — **Cairo**, a geometric, low-contrast companion that mirrors Sora's
-  character for a consistent RTL experience. Applied automatically when the locale
-  is Arabic via a `:lang(ar)` rule that re-points `--font-sans` to Cairo. Var
-  `--font-cairo`.
-- **Mono** — **Cascadia Code**, Microsoft's monospace with programming ligatures.
-  Used for code, identifiers, API paths, SQL/table names, and tabular values via
-  `font-mono`. Var `--font-cascadia-code` → `--font-mono`.
+- **Sans / UI (default)** — **Mona Sans**, GitHub's variable brand sans (weights
+  200–900). Used for all UI and Latin scripts. Inherited from `html`; no class
+  needed. Var `--font-mona-sans` → `--font-sans`.
+- **Arabic & other non-Latin** — no GitHub brand face exists, so glyphs fall
+  through per-glyph to the OS system font (San Francisco / Segoe UI / Noto Sans)
+  via the `--font-sans` fallback stack. No special rule required.
+- **Mono** — **Monaspace Neon**, GitHub's monospace superfamily. Used for code,
+  identifiers, API paths, SQL/table names, and tabular values via `font-mono`.
+  Var `--font-monaspace` → `--font-mono`.
+- **Serif** — no brand serif; `--font-serif` maps to the OS system serif
+  (`ui-serif, Georgia, …`) and is reserved for optional editorial/display text.
 
 ### Type scale
 
-- **Hero title**: Sora, 30px (`text-3xl`), Bold 700.
-- **Page title (h1)**: Sora, 20px (`text-xl`), Bold 700.
-- **Section / card title**: Sora, 14px (`text-sm`), Semibold 600.
-- **KPI value**: Sora, 24px (`text-2xl`), Bold 700.
-- **Overline / KPI label**: Sora, 12px (`text-xs`), Medium 500, `uppercase tracking-wider`.
-- **Body**: Sora, 14px (`text-sm`), Regular 400.
-- **Caption / meta**: Sora, 12px (`text-xs`), Regular 400.
-- **Code / mono**: Cascadia Code, 12px (`text-xs`).
+- **Hero title**: Mona Sans, 30px (`text-3xl`), Bold 700.
+- **Page title (h1)**: Mona Sans, 20px (`text-xl`), Bold 700.
+- **Section / card title**: Mona Sans, 14px (`text-sm`), Semibold 600.
+- **KPI value**: Mona Sans, 24px (`text-2xl`), Bold 700.
+- **Overline / KPI label**: Mona Sans, 12px (`text-xs`), Medium 500, `uppercase tracking-wider`.
+- **Body**: Mona Sans, 14px (`text-sm`), Regular 400.
+- **Caption / meta**: Mona Sans, 12px (`text-xs`), Regular 400.
+- **Code / mono**: Monaspace Neon, 12px (`text-xs`).
 
 ## Spacing
 
@@ -151,22 +153,22 @@ header (block reveal across every report page).
 - Pair every color utility with its `dark:` variant.
 - Use logical Tailwind utilities so layouts mirror in Arabic RTL: `start-*`/`end-*`,
   `ps-*`/`pe-*`, `ms-*`/`me-*`, `border-s`/`border-e`.
-- Use `font-mono` only for code and machine values; let everything else inherit Sora.
+- Use `font-mono` only for code and machine values; let everything else inherit Mona Sans.
 - Guard every animation with `prefers-reduced-motion` and keep motion to entrances.
 - Compose conditional classes with the `cn()` helper (clsx + tailwind-merge).
 
 **Don't**
 
 - Don't use physical `left`/`right` utilities — they break the RTL (Arabic) layout.
-- Don't hardcode `font-family` or introduce fonts outside the three above.
+- Don't hardcode `font-family` or introduce fonts outside Mona Sans / Monaspace.
 - Don't add raw hex values outside the tokens in this file.
 - Don't write custom CSS files — Tailwind utilities only.
 - Don't add looping, autoplay, or attention-seeking motion.
 
 ## Implementation notes (this repo)
 
-- **Font loading**: `app/src/app/layout.tsx` (`next/font`).
-- **Font + color tokens, Arabic override**: `app/src/app/globals.css` (`@theme`, `:lang(ar)`).
+- **Font loading**: `app/src/app/layout.tsx` (`next/font/local`, self-hosted in `app/src/app/fonts/`).
+- **Font + color tokens**: `app/src/app/globals.css` (`@theme`).
 - **Light/dark theming**: `app/src/lib/theme/theme-provider.tsx` (Tailwind `class` strategy).
 - **Chart theming**: `app/src/lib/theme/chart-theme.ts` (`useChartOptions`).
 - **Locale & direction**: `app/src/lib/i18n/locale-provider.tsx`.

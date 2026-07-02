@@ -29,6 +29,7 @@ interface CopilotSeat {
   pending_cancellation_date: string | null;
   last_activity_at: string | null;
   last_activity_editor: string | null;
+  last_authenticated_at: string | null;
   plan_type: string;
   assignee: SeatAssignee;
   assigning_team: AssigningTeam | null;
@@ -128,6 +129,7 @@ export async function GET() {
     let activeCount = 0;
     let inactiveCount = 0;
     let neverActiveCount = 0;
+    let neverAuthenticatedCount = 0;
     let pendingCancellation = 0;
     const planCounts: Record<string, number> = {};
     const inactiveUsers: Array<{
@@ -147,6 +149,7 @@ export async function GET() {
       effectivePlan: string;
       assignmentCount: number;
       lastActivityAt: string | null;
+      lastAuthenticatedAt: string | null;
       lastEditor: string | null;
       earliestAssignment: string;
       status: string;
@@ -163,6 +166,7 @@ export async function GET() {
       let effectiveTier = -1;
       let latestActivity: string | null = null;
       let latestEditor: string | null = null;
+      let latestAuthenticated: string | null = null;
       let earliestCreated: string = seats[0].created_at;
       let hasPending = false;
 
@@ -179,6 +183,11 @@ export async function GET() {
             latestEditor = seat.last_activity_editor ?? null;
           }
         }
+        if (seat.last_authenticated_at) {
+          if (!latestAuthenticated || new Date(seat.last_authenticated_at) > new Date(latestAuthenticated)) {
+            latestAuthenticated = seat.last_authenticated_at;
+          }
+        }
         if (new Date(seat.created_at) < new Date(earliestCreated)) {
           earliestCreated = seat.created_at;
         }
@@ -189,6 +198,7 @@ export async function GET() {
 
       planCounts[effectivePlan] = (planCounts[effectivePlan] || 0) + 1;
       if (hasPending) pendingCancellation++;
+      if (!latestAuthenticated) neverAuthenticatedCount++;
 
       const price = PRICING[effectivePlan] ?? 0;
 
@@ -241,6 +251,7 @@ export async function GET() {
         effectivePlan,
         assignmentCount: seats.length,
         lastActivityAt: latestActivity,
+        lastAuthenticatedAt: latestAuthenticated,
         lastEditor: latestEditor,
         earliestAssignment: earliestCreated,
         status,
@@ -300,6 +311,7 @@ export async function GET() {
       activeCount,
       inactiveCount: inactiveCount + neverActiveCount,
       neverActiveCount,
+      neverAuthenticatedCount,
       pendingCancellation,
       utilizationRate: Math.round(utilizationRate * 10) / 10,
       totalMonthlyCost,

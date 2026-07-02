@@ -25,7 +25,7 @@ RUN pnpm run build
 # Keep this version in sync with @github/copilot in app/pnpm-lock.yaml.
 FROM node:26-alpine AS copilot-cli
 WORKDIR /cli
-RUN npm install --omit=dev --no-audit --no-fund @github/copilot@1.0.65
+RUN npm install --omit=dev --no-audit --no-fund @github/copilot@1.0.68
 RUN test -f /cli/node_modules/@github/copilot/npm-loader.js
 
 FROM node:26-alpine AS runner
@@ -37,8 +37,14 @@ ENV HOSTNAME=0.0.0.0
 # Where the Copilot SDK finds the CLI it spawns (see the copilot-cli stage).
 ENV COPILOT_CLI_PATH=/app/copilot-cli/node_modules/@github/copilot/npm-loader.js
 
-# Runtime library the native Copilot CLI binary needs on Alpine/musl.
-RUN apk add --no-cache libstdc++
+# Upgrade base OS packages (e.g. zlib) to pick up security patches, then add the
+# runtime library the native Copilot CLI binary needs on Alpine/musl.
+RUN apk --no-cache upgrade && apk add --no-cache libstdc++
+
+# The runtime only runs `node server.js` — npm is never invoked, and the npm that
+# ships in the base image bundles vulnerable deps (undici, tar, minimatch,
+# ip-address, brace-expansion). Remove npm entirely so it can't be flagged/used.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
@@ -52,4 +58,11 @@ RUN test -f "$COPILOT_CLI_PATH"
 
 USER nextjs
 EXPOSE 3000
+
+# Liveness/readiness probe — hits /api/health (which also verifies DB
+# connectivity) via Node's built-in fetch, so no curl/wget is required. The
+# start period covers app boot + automatic migrations from instrumentation.ts.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+    CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 CMD ["node", "server.js"]

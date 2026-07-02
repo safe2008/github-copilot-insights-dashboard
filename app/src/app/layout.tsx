@@ -1,33 +1,46 @@
 import type { Metadata } from "next";
-import { Sora, Cairo, Cascadia_Code } from "next/font/google";
+import localFont from "next/font/local";
 import { Sidebar } from "@/components/layout/sidebar";
 import { AuthGate } from "@/components/auth/auth-gate";
 import { ThemeProvider } from "@/lib/theme/theme-provider";
 import { LocaleProvider } from "@/lib/i18n/locale-provider";
 import "./globals.css";
 
-// Primary UI typeface — a geometric sans-serif used for all Latin scripts
-// (English, Spanish, French). Exposed as the `--font-sora` CSS variable.
-const sora = Sora({
-  subsets: ["latin"],
-  variable: "--font-sora",
+// Primary UI typeface — GitHub's brand sans (Mona Sans), self-hosted and
+// exposed as `--font-mona-sans`. Non-Latin scripts (e.g. Arabic) fall through
+// per-glyph to the OS system sans stack defined in globals.css.
+const monaSans = localFont({
+  src: "./fonts/Mona-Sans.woff2",
+  variable: "--font-mona-sans",
   display: "swap",
+  weight: "200 900",
+  fallback: [
+    "-apple-system",
+    "BlinkMacSystemFont",
+    "Segoe UI",
+    "Noto Sans",
+    "Helvetica",
+    "Arial",
+    "sans-serif",
+  ],
 });
 
-// Arabic companion typeface — Cairo shares Sora's geometric, low-contrast,
-// modern character, keeping the RTL experience visually consistent.
-const cairo = Cairo({
-  subsets: ["arabic", "latin"],
-  variable: "--font-cairo",
+// Monospace typeface for code, identifiers, API paths, and tabular figures —
+// GitHub's Monaspace (Neon), self-hosted and exposed as `--font-monaspace`.
+const monaspace = localFont({
+  src: "./fonts/Monaspace-Neon.woff2",
+  variable: "--font-monaspace",
   display: "swap",
-});
-
-// Monospace typeface for code, identifiers, API paths, and tabular figures.
-// Cascadia Code is Microsoft's monospace with programming ligatures.
-const cascadiaCode = Cascadia_Code({
-  subsets: ["latin"],
-  variable: "--font-cascadia-code",
-  display: "swap",
+  weight: "200 800",
+  fallback: [
+    "ui-monospace",
+    "SFMono-Regular",
+    "SF Mono",
+    "Menlo",
+    "Consolas",
+    "Liberation Mono",
+    "monospace",
+  ],
 });
 
 export const metadata: Metadata = {
@@ -51,7 +64,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${sora.variable} ${cairo.variable} ${cascadiaCode.variable}`}
+      className={`${monaSans.variable} ${monaspace.variable}`}
     >
       <body className="bg-gray-50 text-gray-900 antialiased dark:bg-gray-900 dark:text-gray-100">
         <ThemeProvider>

@@ -342,6 +342,7 @@ export async function persistOrgAggregates(
             avgPullRequestsMerged: p.avgPullRequestsMerged,
             avgPullRequestsReviewed: p.avgPullRequestsReviewed,
             avgPullRequestsMedianMinutesToMerge: p.avgPullRequestsMedianMinutesToMerge,
+            totalPullRequestsMerged: p.totalPullRequestsMerged,
           })),
         );
       }

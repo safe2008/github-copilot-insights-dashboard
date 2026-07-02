@@ -78,6 +78,7 @@ export async function GET(request: NextRequest) {
           avgPrsMerged: factOrgAdoptionPhaseDaily.avgPullRequestsMerged,
           avgPrsReviewed: factOrgAdoptionPhaseDaily.avgPullRequestsReviewed,
           avgMinutesToMerge: factOrgAdoptionPhaseDaily.avgPullRequestsMedianMinutesToMerge,
+          totalPrsMerged: factOrgAdoptionPhaseDaily.totalPullRequestsMerged,
         })
         .from(factOrgAdoptionPhaseDaily)
         .where(and(...outcomeConds));
@@ -245,6 +246,7 @@ export async function GET(request: NextRequest) {
         avgPrsMerged: numOrNull(o?.avgPrsMerged),
         avgPrsReviewed: numOrNull(o?.avgPrsReviewed),
         avgMinutesToMerge: numOrNull(o?.avgMinutesToMerge),
+        totalPrsMerged: o?.totalPrsMerged ?? null,
       };
     });
 
