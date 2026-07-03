@@ -278,17 +278,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Previous published release (if any) bounds the notes range.
-          prev="$(gh api "repos/$GH_REPO/releases/latest" --jq .tag_name 2>/dev/null || true)"
-
-          # Categorized notes (respects .github/release.yml): PRs, issues, contributors.
-          if [[ -n "$prev" ]]; then
-            notes="$(gh api "repos/$GH_REPO/releases/generate-notes" \
-              -f tag_name="$TAG_NAME" -f previous_tag_name="$prev" --jq .body)"
-          else
-            notes="$(gh api "repos/$GH_REPO/releases/generate-notes" \
-              -f tag_name="$TAG_NAME" --jq .body)"
-          fi
+          # Categorized notes (respects .github/release.yml): PRs, issues,
+          # contributors. Omitting previous_tag_name lets GitHub auto-detect the
+          # prior tag and handles the first-release case (no previous tag).
+          notes="$(gh api "repos/$GH_REPO/releases/generate-notes" \
+            -f tag_name="$TAG_NAME" --jq .body)"
 
           {
             echo "notes<<RELEASE_NOTES_EOF"
