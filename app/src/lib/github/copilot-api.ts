@@ -18,6 +18,7 @@ import type {
 } from "@/types/copilot-api";
 
 const GITHUB_API_BASE = "https://api.github.com";
+const GITHUB_GRAPHQL = `${GITHUB_API_BASE}/graphql`;
 const API_VERSION = "2026-03-10";
 const MAX_RETRIES = 5;
 const INITIAL_BACKOFF_MS = 1000;
@@ -248,6 +249,82 @@ async function fetchWithRetry(
   throw lastError ?? new Error("Request failed after retries");
 }
 
+async function fetchGraphQLWithRetry(
+  payload: unknown,
+  token: string,
+  retries = MAX_RETRIES,
+): Promise<{ response: Response; apiRequestCount: number }> {
+  let lastError: Error | null = null;
+  let apiRequestCount = 0;
+
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      apiRequestCount++;
+      const response = await fetch(GITHUB_GRAPHQL, {
+        method: "POST",
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          "X-GitHub-Api-Version": API_VERSION,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.status === 429) {
+        lastError = new Error(`GitHub GraphQL rate limited: ${response.status} ${response.statusText}`);
+        const retryAfter = response.headers.get("retry-after");
+        const waitMs = retryAfter
+          ? parseInt(retryAfter, 10) * 1000
+          : INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+        console.warn(
+          `GraphQL rate limited. Waiting ${waitMs}ms before retry ${attempt + 1}/${retries}`,
+        );
+        await sleep(waitMs);
+        continue;
+      }
+
+      if (response.status >= 500) {
+        lastError = new Error(`GitHub GraphQL server error: ${response.status} ${response.statusText}`);
+        const waitMs = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+        console.warn(
+          `GraphQL server error ${response.status}. Waiting ${waitMs}ms before retry ${attempt + 1}/${retries}`,
+        );
+        await sleep(waitMs);
+        continue;
+      }
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        if (response.status >= 400 && response.status < 500) {
+          throw new NonRetryableError(
+            `GitHub GraphQL error ${response.status} ${response.statusText}: ${body}`,
+          );
+        }
+        throw new Error(`GitHub GraphQL error: ${response.status} ${response.statusText}: ${body}`);
+      }
+
+      return { response, apiRequestCount };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (lastError instanceof NonRetryableError) throw lastError;
+
+      const isNetworkError = isTransientNetworkError(lastError);
+      if (attempt < retries - 1) {
+        const baseMs = isNetworkError ? INITIAL_BACKOFF_MS * 2 : INITIAL_BACKOFF_MS;
+        const waitMs = baseMs * Math.pow(2, attempt);
+        console.warn(
+          `GraphQL request failed (${isNetworkError ? "network error" : "error"}): ${lastError.message}. ` +
+          `Retrying in ${waitMs}ms (${attempt + 1}/${retries})`,
+        );
+        await sleep(waitMs);
+      }
+    }
+  }
+
+  throw lastError ?? new Error("GitHub GraphQL request failed after retries");
+}
+
 /**
  * Fetches all Copilot usage records for the given enterprise.
  *
@@ -419,14 +496,6 @@ export async function fetchEnterpriseAggregate(
   return { records, apiRequestCount };
 }
 
-/** Returns true for NonRetryableError caused by HTTP 403/404. */
-function isForbiddenOrNotFound(err: unknown): boolean {
-  return (
-    err instanceof NonRetryableError &&
-    (/\b403\b/.test(err.message) || /\b404\b/.test(err.message))
-  );
-}
-
 /**
  * Paginate `GET /user/orgs` — lists all orgs the authenticated token is a member
  * of. Used only as a fallback when the enterprise-scoped endpoint is unavailable
@@ -456,56 +525,110 @@ async function listOrgsViaUserMemberships(
 }
 
 /**
- * Lists all organizations in an enterprise (paginated).
+ * Lists all organizations in an enterprise via the GraphQL
+ * `enterprise.organizations` connection (paginated).
  *
- * Uses the official enterprise-scoped endpoint
- * `GET /enterprises/{enterprise}/organizations`, which returns the true set of
- * organizations owned by the enterprise. If that endpoint is forbidden or not
- * found (e.g. a non-enterprise token, or insufficient scopes), it falls back to
- * `GET /user/orgs`, which only lists orgs the token's user is a member of and
- * can therefore under-count enterprise organizations.
+ * The REST route `GET /enterprises/{enterprise}/organizations` does not exist —
+ * it returns 404 for every token, including a full `admin:enterprise` PAT — so
+ * GraphQL is the supported enterprise-scoped source. Maps GraphQL `databaseId`
+ * to the numeric `id`. Throws if the request itself fails so the caller can fall
+ * back to `GET /user/orgs`.
+ */
+async function listEnterpriseOrgsViaGraphQL(
+  enterpriseSlug: string,
+  token: string
+): Promise<{ orgs: EnterpriseOrg[]; apiRequestCount: number }> {
+  const orgs: EnterpriseOrg[] = [];
+  let apiRequestCount = 0;
+  let cursor: string | null = null;
+
+  const query =
+    "query($slug:String!,$cursor:String){ enterprise(slug:$slug){ organizations" +
+    "(first:100, after:$cursor){ pageInfo{ hasNextPage endCursor } nodes{ login databaseId } } } }";
+
+  while (true) {
+    const { response: res, apiRequestCount: requestCount } = await fetchGraphQLWithRetry(
+      { query, variables: { slug: enterpriseSlug, cursor } },
+      token,
+    );
+    apiRequestCount += requestCount;
+
+    const json = (await res.json()) as {
+      data?: {
+        enterprise?: {
+          organizations?: {
+            pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+            nodes?: Array<{ login: string; databaseId: number } | null>;
+          };
+        };
+      };
+      errors?: Array<{ message: string }>;
+    };
+
+    if (json.errors?.length) {
+      throw new NonRetryableError(`GraphQL enterprise.organizations error: ${json.errors.map((e) => e.message).join("; ")}`);
+    }
+
+    const conn = json.data?.enterprise?.organizations;
+    if (!conn) {
+      throw new Error(`GraphQL returned no enterprise.organizations for "${enterpriseSlug}"`);
+    }
+
+    for (const node of conn.nodes ?? []) {
+      if (node?.login) orgs.push({ login: node.login, id: node.databaseId });
+    }
+
+    if (conn.pageInfo?.hasNextPage && conn.pageInfo.endCursor) {
+      cursor = conn.pageInfo.endCursor;
+    } else {
+      break;
+    }
+  }
+
+  return { orgs, apiRequestCount };
+}
+
+/**
+ * Lists all organizations in an enterprise.
+ *
+ * Primary source is the GraphQL `enterprise.organizations` connection. If it is
+ * unavailable (non-enterprise token, missing access, or a transient error) or
+ * returns no orgs, it falls back to `GET /user/orgs`, which only lists orgs the
+ * token's user belongs to and can therefore under-count enterprise organizations.
  */
 export async function listEnterpriseOrgs(opts: {
   enterpriseSlug: string;
   token: string;
 }): Promise<{ orgs: EnterpriseOrg[]; apiRequestCount: number }> {
-  let apiRequestCount = 0;
-  const allOrgs: EnterpriseOrg[] = [];
-  let page = 1;
-  const perPage = 100;
-
   console.info(`Discovering organizations for enterprise "${opts.enterpriseSlug}"…`);
 
-  const slug = encodeURIComponent(opts.enterpriseSlug);
-
   try {
-    while (true) {
-      const url = `${GITHUB_API_BASE}/enterprises/${slug}/organizations?per_page=${perPage}&page=${page}`;
-      const response = await fetchWithRetry(url, opts.token, MAX_RETRIES);
-      apiRequestCount++;
-
-      const orgs: EnterpriseOrg[] = await response.json();
-      allOrgs.push(...orgs);
-
-      if (orgs.length < perPage) break;
-      page++;
+    const { orgs, apiRequestCount } = await listEnterpriseOrgsViaGraphQL(
+      opts.enterpriseSlug,
+      opts.token
+    );
+    if (orgs.length > 0) {
+      console.info(
+        `Found ${orgs.length} organization(s) in enterprise "${opts.enterpriseSlug}" via GraphQL`
+      );
+      return { orgs, apiRequestCount };
     }
 
-    console.info(`Found ${allOrgs.length} organization(s) in enterprise "${opts.enterpriseSlug}"`);
-    return { orgs: allOrgs, apiRequestCount };
-  } catch (err) {
-    if (!isForbiddenOrNotFound(err)) throw err;
-
     console.warn(
-      `Enterprise organizations endpoint unavailable (${(err as Error).message}). ` +
+      `GraphQL returned no organizations for "${opts.enterpriseSlug}". Falling back to GET /user/orgs.`
+    );
+    const fallback = await listOrgsViaUserMemberships(opts.token);
+    return {
+      orgs: fallback.orgs,
+      apiRequestCount: apiRequestCount + fallback.apiRequestCount,
+    };
+  } catch (err) {
+    console.warn(
+      `Enterprise organizations via GraphQL unavailable (${(err as Error).message}). ` +
       `Falling back to GET /user/orgs (may under-count enterprise organizations).`
     );
-
     const fallback = await listOrgsViaUserMemberships(opts.token);
-    apiRequestCount += fallback.apiRequestCount;
-
-    console.info(`Found ${fallback.orgs.length} organization(s) accessible to the token (fallback)`);
-    return { orgs: fallback.orgs, apiRequestCount };
+    return { orgs: fallback.orgs, apiRequestCount: fallback.apiRequestCount };
   }
 }
 
@@ -624,6 +747,8 @@ export interface CopilotSeat {
   pending_cancellation_date: string | null;
   last_activity_at: string | null;
   last_activity_editor: string | null;
+  /** When the seat holder last authenticated to Copilot (added to the seats API). */
+  last_authenticated_at?: string | null;
   plan_type: string;
   assignee: CopilotSeatAssignee;
   assigning_team: CopilotSeatAssigningTeam | null;
@@ -712,19 +837,16 @@ async function fetchOrgData(opts: OrgFetchOptions): Promise<{
     const aggReportData: CopilotMetricsReportResponse = await aggResponse.json();
 
     if (aggReportData.download_links?.length) {
+      const lines: AggregateReportLine[] = [];
       for (const link of aggReportData.download_links) {
         const fileResponse = await fetch(link);
         apiRequestCount++;
         if (fileResponse.ok) {
           const content = await fileResponse.text();
-          const parsed = parseNdjson<CopilotAggregateRecord>(content);
-          for (const r of parsed) {
-            r._orgLogin = opts.orgLogin;
-            r._scope = "organization";
-          }
-          aggregateRecords.push(...parsed);
+          lines.push(...parseNdjson<AggregateReportLine>(content));
         }
       }
+      aggregateRecords.push(...flattenAggregateReport(lines, "organization", opts.orgLogin));
     }
   } catch (err) {
     console.warn(`Failed to fetch aggregate data for org "${opts.orgLogin}": ${err}`);

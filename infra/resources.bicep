@@ -99,6 +99,8 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enableRbacAuthorization: true
     enableSoftDelete: true
     softDeleteRetentionInDays: 90
+    // Prevent permanent deletion of secrets during the soft-delete window.
+    enablePurgeProtection: true
   }
 }
 
@@ -180,6 +182,7 @@ resource kvSecretDatabaseUrl 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   name: 'DATABASE-URL'
   properties: {
     value: databaseUrl
+    contentType: 'PostgreSQL connection string'
   }
 }
 
@@ -188,6 +191,7 @@ resource kvSecretGithubToken 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if
   name: 'GITHUB-TOKEN'
   properties: {
     value: githubToken
+    contentType: 'GitHub personal access token'
   }
 }
 
@@ -196,6 +200,7 @@ resource kvSecretAdminPassword 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = 
   name: 'ADMIN-PASSWORD'
   properties: {
     value: adminPassword
+    contentType: 'Dashboard admin password'
   }
 }
 
@@ -204,6 +209,7 @@ resource kvSecretDashboardPassword 'Microsoft.KeyVault/vaults/secrets@2023-07-01
   name: 'DASHBOARD-PASSWORD'
   properties: {
     value: dashboardPassword
+    contentType: 'Dashboard access password'
   }
 }
 

@@ -101,6 +101,7 @@ export async function persistCopilotSeatAssignments(opts: {
     seatUpdatedAt: toDate(seat.updated_at),
     pendingCancellationDate: toDateOnly(seat.pending_cancellation_date),
     lastActivityAt: toDate(seat.last_activity_at),
+    lastAuthenticatedAt: toDate(seat.last_authenticated_at),
     lastActivityEditor: seat.last_activity_editor ?? null,
     rawJson: seat,
     capturedAt: new Date(),

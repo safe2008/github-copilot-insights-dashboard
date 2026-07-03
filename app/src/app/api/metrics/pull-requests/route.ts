@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { factOrgAggregateDaily, dimOrg } from "@/lib/db/schema";
-import { sql, and, gte, lte, eq, inArray } from "drizzle-orm";
+import { factOrgAggregateDaily, factOrgPrCommentTypeDaily, dimOrg } from "@/lib/db/schema";
+import { sql, and, gte, lte, eq, inArray, isNull } from "drizzle-orm";
 import { daysAgo, isValidDate } from "@/lib/utils";
 import { z } from "zod";
 
@@ -11,6 +11,12 @@ const querySchema = z.object({
   end: z.string().refine(isValidDate).optional(),
   orgId: z.string().optional(),
 });
+
+function parseOrgIds(orgId?: string): number[] {
+  return orgId
+    ? orgId.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n))
+    : [];
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,17 +30,29 @@ export async function GET(request: NextRequest) {
 
     const startDate = params.start ?? daysAgo(params.days ?? 28);
     const endDate = params.end ?? daysAgo(0);
+    const orgIds = parseOrgIds(params.orgId);
 
     const conditions = [
       gte(factOrgAggregateDaily.day, startDate),
       lte(factOrgAggregateDaily.day, endDate),
     ];
 
-    if (params.orgId) {
-      const orgIds = params.orgId.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
+    if (orgIds.length === 0) {
+      conditions.push(eq(factOrgAggregateDaily.scope, "enterprise"));
+      conditions.push(isNull(factOrgAggregateDaily.orgId));
+    } else {
+      conditions.push(eq(factOrgAggregateDaily.scope, "organization"));
       if (orgIds.length === 1) conditions.push(eq(factOrgAggregateDaily.orgId, orgIds[0]));
-      else if (orgIds.length > 1) conditions.push(inArray(factOrgAggregateDaily.orgId, orgIds));
+      else conditions.push(inArray(factOrgAggregateDaily.orgId, orgIds));
     }
+
+    const orgBreakdownConditions = [
+      gte(factOrgAggregateDaily.day, startDate),
+      lte(factOrgAggregateDaily.day, endDate),
+      eq(factOrgAggregateDaily.scope, "organization"),
+    ];
+    if (orgIds.length === 1) orgBreakdownConditions.push(eq(factOrgAggregateDaily.orgId, orgIds[0]));
+    else if (orgIds.length > 1) orgBreakdownConditions.push(inArray(factOrgAggregateDaily.orgId, orgIds));
 
     // Daily PR metrics
     const dailyMetrics = await db
@@ -96,13 +114,51 @@ export async function GET(request: NextRequest) {
       })
       .from(factOrgAggregateDaily)
       .leftJoin(dimOrg, eq(factOrgAggregateDaily.orgId, dimOrg.orgId))
-      .where(and(...conditions))
+      .where(and(...orgBreakdownConditions))
       .groupBy(factOrgAggregateDaily.orgId, dimOrg.orgName);
+
+    // Copilot PR-review suggestion apply-rate by comment type
+    // (pull_requests.copilot_suggestions_by_comment_type, 2026-03-10).
+    const commentTypeConditions = [
+      gte(factOrgPrCommentTypeDaily.day, startDate),
+      lte(factOrgPrCommentTypeDaily.day, endDate),
+    ];
+    if (orgIds.length === 0) {
+      commentTypeConditions.push(eq(factOrgPrCommentTypeDaily.scope, "enterprise"));
+      commentTypeConditions.push(isNull(factOrgPrCommentTypeDaily.orgId));
+    } else {
+      commentTypeConditions.push(eq(factOrgPrCommentTypeDaily.scope, "organization"));
+      if (orgIds.length === 1) commentTypeConditions.push(eq(factOrgPrCommentTypeDaily.orgId, orgIds[0]));
+      else commentTypeConditions.push(inArray(factOrgPrCommentTypeDaily.orgId, orgIds));
+    }
+
+    const commentTypeBreakdown = await db
+      .select({
+        commentType: factOrgPrCommentTypeDaily.commentType,
+        suggestions: sql<number>`coalesce(sum(${factOrgPrCommentTypeDaily.totalCopilotSuggestions}), 0)`,
+        applied: sql<number>`coalesce(sum(${factOrgPrCommentTypeDaily.totalCopilotAppliedSuggestions}), 0)`,
+      })
+      .from(factOrgPrCommentTypeDaily)
+      .where(and(...commentTypeConditions))
+      .groupBy(factOrgPrCommentTypeDaily.commentType)
+      .orderBy(sql`sum(${factOrgPrCommentTypeDaily.totalCopilotSuggestions}) desc`);
+
+    const suggestionsByCommentType = commentTypeBreakdown.map((c) => {
+      const suggestions = Number(c.suggestions);
+      const applied = Number(c.applied);
+      return {
+        commentType: c.commentType,
+        suggestions,
+        applied,
+        applyRatePct: suggestions > 0 ? Math.round((applied / suggestions) * 1000) / 10 : 0,
+      };
+    });
 
     return NextResponse.json({
       daily: dailyMetrics,
       totals: totals ?? {},
       orgBreakdown,
+      suggestionsByCommentType,
     });
   } catch (error) {
     console.error("Failed to fetch PR metrics:", error);

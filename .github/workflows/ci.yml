@@ -2,22 +2,32 @@ name: CI
 
 on:
   push:
+    branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
+  schedule:
+    # Weekly Monday 06:00 UTC — re-scan the image for newly disclosed CVEs.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+# Least privilege by default; individual jobs elevate only what they need.
 permissions:
   contents: read
-  packages: write
-  security-events: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    name: Build & Lint
+    name: Build, Lint & Test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: app
@@ -33,20 +43,113 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 26
           cache: pnpm
           cache-dependency-path: app/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Unit tests
+        run: pnpm run test
+
       - name: Build Next.js
         run: pnpm run build
+
+  codeql:
+    name: CodeQL (JS/TS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:javascript-typescript"
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Review dependencies
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
+  config-scan:
+    name: IaC & Secret Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Trivy config scan (Dockerfile + Bicep)
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          scan-type: config
+          scan-ref: .
+          # Dev-only container: not a production image, so exclude it from the
+          # Dockerfile best-practice (non-root USER / HEALTHCHECK) checks.
+          skip-dirs: .devcontainer
+          format: sarif
+          output: trivy-config.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+
+      - name: Upload config scan results
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config
+
+      - name: Trivy secret scan
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          format: sarif
+          output: trivy-secret.sarif
+
+      - name: Upload secret scan results
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-secret.sarif
+          category: trivy-secret
 
   docker:
     name: Docker Build & Security Scan
     runs-on: ubuntu-latest
     needs: build
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -64,29 +167,49 @@ jobs:
           build-args: |
             BUILD_ID=${{ github.sha }}
             BUILD_TIME=${{ github.event.head_commit.timestamp }}
+          # On the weekly schedule, bypass cache so `apk upgrade` re-resolves
+          # against the latest Alpine package index and new base-image CVEs surface.
+          no-cache: ${{ github.event_name == 'schedule' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Run Trivy vulnerability scan
+      - name: Trivy scan (report to SARIF)
         uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ci-scan:${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
-          severity: CRITICAL,HIGH
+          severity: CRITICAL,HIGH,MEDIUM
+          ignore-unfixed: true
 
       - name: Upload Trivy scan results
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-results.sarif
+          category: trivy-image
+
+      - name: Trivy gate (fail on fixable CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: ci-scan:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
 
   push:
     name: Push to GitHub Container Registry
     runs-on: ubuntu-latest
-    needs: docker
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [codeql, config-scan, docker]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     environment: production
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -109,9 +232,11 @@ jobs:
           tags: |
             type=sha,prefix=
             type=ref,event=branch
+            type=ref,event=tag
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
+        id: push
         uses: docker/build-push-action@v7
         with:
           context: app
@@ -123,3 +248,102 @@ jobs:
             BUILD_TIME=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: push
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment: release
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      models: read
+    steps:
+      - name: Generate release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Previous published release (if any) bounds the notes range.
+          prev="$(gh api "repos/$GH_REPO/releases/latest" --jq .tag_name 2>/dev/null || true)"
+
+          # Categorized notes (respects .github/release.yml): PRs, issues, contributors.
+          if [[ -n "$prev" ]]; then
+            notes="$(gh api "repos/$GH_REPO/releases/generate-notes" \
+              -f tag_name="$TAG_NAME" -f previous_tag_name="$prev" --jq .body)"
+          else
+            notes="$(gh api "repos/$GH_REPO/releases/generate-notes" \
+              -f tag_name="$TAG_NAME" --jq .body)"
+          fi
+
+          {
+            echo "notes<<RELEASE_NOTES_EOF"
+            echo "$notes"
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summarize release with AI
+        id: ai
+        continue-on-error: true
+        uses: actions/ai-inference@v1
+        with:
+          model: openai/gpt-4o-mini
+          system-prompt: >-
+            You are a release-notes editor. Write a concise "Highlights" section
+            of 3-6 markdown bullets for a technical audience, based only on the
+            provided notes. No preamble, no headings, no invented items.
+          prompt: |
+            Repository: ${{ github.repository }}
+            Release tag: ${{ github.ref_name }}
+
+            Auto-generated notes:
+            ${{ steps.notes.outputs.notes }}
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+          NOTES: ${{ steps.notes.outputs.notes }}
+          AI_SUMMARY: ${{ steps.ai.outputs.response }}
+        run: |
+          set -euo pipefail
+
+          body_file="$(mktemp)"
+          # Prepend the AI highlights only when the step produced non-empty text.
+          if [[ -n "${AI_SUMMARY//[[:space:]]/}" ]]; then
+            {
+              echo "## ✨ Highlights (AI-generated)"
+              echo
+              echo "$AI_SUMMARY"
+              echo
+              echo "---"
+              echo
+            } >> "$body_file"
+          fi
+          printf '%s\n' "$NOTES" >> "$body_file"
+
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Release $TAG_NAME exists; updating notes."
+            gh release edit "$TAG_NAME" --title "$TAG_NAME" --notes-file "$body_file"
+          else
+            gh release create "$TAG_NAME" \
+              --title "$TAG_NAME" \
+              --latest \
+              --verify-tag \
+              --notes-file "$body_file"
+          fi

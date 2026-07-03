@@ -15,7 +15,7 @@ export interface CopilotMetricsReportResponse {
   report_end_day?: string;
 }
 
-// ── Enterprise Organization (from /enterprises/{enterprise}/organizations) ──
+// ── Enterprise Organization (from GraphQL enterprise.organizations) ──
 
 export interface EnterpriseOrg {
   login: string;
@@ -79,13 +79,6 @@ export interface CopilotUsageRecord {
    */
   ai_credits_used?: number;
 
-  // Chat mode breakdowns
-  chat_panel_agent_mode?: number;
-  chat_panel_ask_mode?: number;
-  chat_panel_custom_mode?: number;
-  chat_panel_edit_mode?: number;
-  chat_panel_unknown_mode?: number;
-
   /**
    * AI adoption phase classification for the user over the rolling 28-day
    * window (Copilot Usage Metrics API, added 2026-05-29). The API nests the
@@ -124,7 +117,7 @@ export interface CopilotUsageRecord {
 export type AiAdoptionPhaseField =
   | number
   | string
-  | { phase?: number | string; version?: string }
+  | { phase?: number | string; phase_number?: number; version?: string }
   | null;
 
 /** Canonical numeric AI adoption phase values. */
@@ -159,11 +152,72 @@ export interface CopilotAggregateRecord {
   monthly_active_agent_users?: number;
   monthly_active_chat_users?: number;
   daily_active_cli_users?: number;
+
+  // Surface-level engaged-user variants (Copilot Usage Metrics API, 2026-03-10):
+  // cloud-agent and code-review (active/passive) across daily/weekly/monthly.
+  daily_active_copilot_cloud_agent_users?: number;
+  weekly_active_copilot_cloud_agent_users?: number;
+  monthly_active_copilot_cloud_agent_users?: number;
+  daily_active_copilot_code_review_users?: number;
+  weekly_active_copilot_code_review_users?: number;
+  monthly_active_copilot_code_review_users?: number;
+  daily_passive_copilot_code_review_users?: number;
+  weekly_passive_copilot_code_review_users?: number;
+  monthly_passive_copilot_code_review_users?: number;
+
+  // Aggregate-level activity totals (also reconstructable from per-user facts,
+  // but GitHub publishes them pre-aggregated at the entity scope).
+  user_initiated_interaction_count?: number;
+  code_generation_activity_count?: number;
+  code_acceptance_activity_count?: number;
+  loc_added_sum?: number;
+  loc_deleted_sum?: number;
+  loc_suggested_to_add_sum?: number;
+  loc_suggested_to_delete_sum?: number;
+
+  // Aggregate-level breakdowns (mirror the per-user arrays).
+  totals_by_cli?: TotalsByCli;
+  totals_by_ide?: TotalsByIde[];
+  totals_by_feature?: TotalsByFeature[];
+  totals_by_language_feature?: TotalsByLanguageFeature[];
+  totals_by_language_model?: TotalsByLanguageModel[];
+  totals_by_model_feature?: TotalsByModelFeature[];
+
+  /** Per-phase engaged-user counts + average outcomes (cohort analytics). */
+  totals_by_ai_adoption_phase?: TotalsByAiAdoptionPhase[];
+
   pull_requests?: PullRequestMetrics;
 
   /** Injected at ingestion time. Not from the API. */
   _orgLogin?: string;
   _scope?: "enterprise" | "organization";
+}
+
+/**
+ * One entry per AI adoption phase in an aggregate report's
+ * `totals_by_ai_adoption_phase` block. `phase` is the human label (e.g.
+ * "Phase 3"), `phase_number` is the canonical 0–3 value. The `avg_*` fields
+ * are GitHub-computed per-phase averages over the report's engaged users.
+ */
+export interface TotalsByAiAdoptionPhase {
+  phase: string;
+  phase_number: number;
+  total_engaged_users: number;
+  /**
+   * Absolute count of pull requests merged by this phase's engaged users over
+   * the report window (Copilot Usage Metrics API, added 2026-07-02). Complements
+   * the per-user `avg_pull_requests_merged`.
+   */
+  total_pull_requests_merged?: number;
+  avg_user_initiated_interactions?: number;
+  avg_code_generation_activities?: number;
+  avg_code_acceptance_activities?: number;
+  avg_loc_added?: number;
+  avg_loc_deleted?: number;
+  avg_pull_requests_created?: number;
+  avg_pull_requests_merged?: number;
+  avg_pull_requests_reviewed?: number;
+  avg_pull_requests_median_minutes_to_merge?: number;
 }
 
 /**
@@ -177,6 +231,7 @@ export interface AggregateReportLine {
   organization_id?: string;
   report_start_day?: string;
   report_end_day?: string;
+  created_at?: string;
   /** Present in the wrapped form: one entry per day. */
   day_totals?: CopilotAggregateRecord[];
   /** Present in the flat form: a single day's totals at the top level. */
@@ -211,6 +266,14 @@ export interface PullRequestMetrics {
   total_merged_reviewed_by_copilot?: number;
   median_minutes_to_merge_copilot_authored?: number;
   median_minutes_to_merge_copilot_reviewed?: number;
+  total_copilot_suggestions?: number;
+  total_copilot_applied_suggestions?: number;
+  copilot_suggestions_by_comment_type?: CopilotSuggestionByCommentType[];
+}
+
+/** One entry per PR comment type in `pull_requests.copilot_suggestions_by_comment_type`. */
+export interface CopilotSuggestionByCommentType {
+  comment_type: string;
   total_copilot_suggestions?: number;
   total_copilot_applied_suggestions?: number;
 }

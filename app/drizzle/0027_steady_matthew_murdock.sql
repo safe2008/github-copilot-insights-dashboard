@@ -1,0 +1,2 @@
+ALTER TABLE "fact_org_adoption_phase_daily" ADD COLUMN IF NOT EXISTS "total_pull_requests_merged" integer;--> statement-breakpoint
+ALTER TABLE "fact_org_adoption_phase_daily" ALTER COLUMN "total_pull_requests_merged" DROP DEFAULT;

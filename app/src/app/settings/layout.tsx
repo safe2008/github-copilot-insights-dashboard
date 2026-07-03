@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Settings, Database, ScrollText, LogOut, Info, DatabaseZap, Sparkles } from "lucide-react";
+import { Database, ScrollText, LogOut, Info, DatabaseZap, Sparkles, KeyRound, PlugZap, LayoutDashboard } from "lucide-react";
 import { AdminGate } from "@/components/auth/admin-gate";
 import { useTranslation } from "@/lib/i18n/locale-provider";
 
 const tabs = [
-  { labelKey: "settings.configuration", href: "/settings", icon: Settings },
+  { labelKey: "settings.overview", href: "/settings", icon: LayoutDashboard },
+  { labelKey: "settings.tokenSetup", href: "/settings/token", icon: KeyRound },
+  { labelKey: "settings.apiAccess", href: "/settings/api-access", icon: PlugZap },
   { labelKey: "settings.dataSync", href: "/settings/data-sync", icon: Database },
   { labelKey: "settings.aiAnalyst", href: "/settings/ai-analyst", icon: Sparkles },
   { labelKey: "settings.migrations", href: "/settings/migrations", icon: DatabaseZap },

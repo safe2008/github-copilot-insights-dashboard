@@ -1,0 +1,22 @@
+# Trivy misconfiguration exceptions (accepted risks with rationale).
+# Auto-detected by `trivy config .` (repo root) in local runs and CI.
+
+# AZU-0013 — Key Vault network ACL does not default-deny.
+# The Container App consumes DATABASE-URL / GITHUB-TOKEN / ADMIN-PASSWORD /
+# DASHBOARD-PASSWORD via runtime Key Vault *references* using its user-assigned
+# managed identity over the Key Vault data plane. A `defaultAction: Deny` vault
+# is NOT reachable by non-VNet Container Apps (the "trusted Microsoft services"
+# bypass does not cover Container Apps secret references), so enabling it here
+# would break secret resolution and the running app.
+# Compensating controls: RBAC authorization, managed-identity-only access
+# (no access policies, no admin keys), soft-delete + purge protection, HTTPS.
+# Real fix (tracked separately): add a Key Vault private endpoint + VNet-injected
+# Container Apps environment, then set defaultAction to Deny.
+AZU-0013
+
+# AZU-0017 — Key Vault secrets have no expiry date.
+# These are long-lived operational configuration secrets (DB connection string,
+# GitHub PAT, admin/dashboard passwords) without an automated rotation pipeline;
+# setting an expiry would cause the app to fail once secrets lapse. Rotation is
+# handled operationally (regenerate the PAT / passwords and re-run `azd up`).
+AZU-0017

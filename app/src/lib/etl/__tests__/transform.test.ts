@@ -399,6 +399,17 @@ describe("extractAiAdoptionPhase", () => {
     expect(extractAiAdoptionPhase({ phase: 2, version: "v1" })).toEqual({ phase: 2, version: "v1" });
   });
 
+  it("prefers numeric phase_number over the phase label (live 2026-03-10 shape)", () => {
+    // Live API returns { phase_number, phase: "Phase 3", version }.
+    expect(extractAiAdoptionPhase({ phase_number: 3, phase: "Phase 3", version: "v1" })).toEqual({ phase: 3, version: "v1" });
+    // phase_number 0 ("No Cohort") must be preserved, not treated as falsy.
+    expect(extractAiAdoptionPhase({ phase_number: 0, phase: "No Cohort", version: "v1" })).toEqual({ phase: 0, version: "v1" });
+    // phase_number wins even if the label is unparseable.
+    expect(extractAiAdoptionPhase({ phase_number: 2, phase: "garbage", version: "v1" })).toEqual({ phase: 2, version: "v1" });
+    // out-of-range phase_number → null phase, version preserved.
+    expect(extractAiAdoptionPhase({ phase_number: 9, version: "v2" })).toEqual({ phase: null, version: "v2" });
+  });
+
   it("parses a bare numeric phase", () => {
     expect(extractAiAdoptionPhase(3)).toEqual({ phase: 3, version: null });
   });

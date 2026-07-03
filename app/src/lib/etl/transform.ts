@@ -37,7 +37,10 @@ export function extractAiAdoptionPhase(
   let version: string | null = null;
 
   if (typeof field === "object") {
-    rawPhase = field.phase;
+    // Prefer the canonical numeric `phase_number` (live API, 2026-03-10); fall
+    // back to the legacy `phase`, which may be a number, a token, or a label
+    // string like "Phase 3". `??` keeps a valid 0 (No Cohort).
+    rawPhase = field.phase_number ?? field.phase;
     version = field.version ?? null;
   } else {
     rawPhase = field;
@@ -422,6 +425,15 @@ export interface FactOrgAggregateDailyRow {
   monthlyActiveAgentUsers: number;
   monthlyActiveChatUsers: number;
   dailyActiveCliUsers: number;
+  dailyActiveCloudAgentUsers: number;
+  weeklyActiveCloudAgentUsers: number;
+  monthlyActiveCloudAgentUsers: number;
+  dailyActiveCodeReviewUsers: number;
+  weeklyActiveCodeReviewUsers: number;
+  monthlyActiveCodeReviewUsers: number;
+  dailyPassiveCodeReviewUsers: number;
+  weeklyPassiveCodeReviewUsers: number;
+  monthlyPassiveCodeReviewUsers: number;
   prTotalCreated: number;
   prTotalReviewed: number;
   prTotalMerged: number;
@@ -452,6 +464,15 @@ export function transformToFactOrgAggregate(
     monthlyActiveAgentUsers: record.monthly_active_agent_users ?? 0,
     monthlyActiveChatUsers: record.monthly_active_chat_users ?? 0,
     dailyActiveCliUsers: record.daily_active_cli_users ?? 0,
+    dailyActiveCloudAgentUsers: record.daily_active_copilot_cloud_agent_users ?? 0,
+    weeklyActiveCloudAgentUsers: record.weekly_active_copilot_cloud_agent_users ?? 0,
+    monthlyActiveCloudAgentUsers: record.monthly_active_copilot_cloud_agent_users ?? 0,
+    dailyActiveCodeReviewUsers: record.daily_active_copilot_code_review_users ?? 0,
+    weeklyActiveCodeReviewUsers: record.weekly_active_copilot_code_review_users ?? 0,
+    monthlyActiveCodeReviewUsers: record.monthly_active_copilot_code_review_users ?? 0,
+    dailyPassiveCodeReviewUsers: record.daily_passive_copilot_code_review_users ?? 0,
+    weeklyPassiveCodeReviewUsers: record.weekly_passive_copilot_code_review_users ?? 0,
+    monthlyPassiveCodeReviewUsers: record.monthly_passive_copilot_code_review_users ?? 0,
     prTotalCreated: pr?.total_created ?? 0,
     prTotalReviewed: pr?.total_reviewed ?? 0,
     prTotalMerged: pr?.total_merged ?? 0,
@@ -475,4 +496,95 @@ export function transformToFactOrgAggregate(
     prTotalCopilotSuggestions: pr?.total_copilot_suggestions ?? 0,
     prTotalCopilotAppliedSuggestions: pr?.total_copilot_applied_suggestions ?? 0,
   };
+}
+
+/** Stringify a finite number for a Drizzle `numeric` column; null otherwise. */
+function numericOrNull(v: number | undefined | null): string | null {
+  return typeof v === "number" && Number.isFinite(v) ? String(v) : null;
+}
+
+// ── Aggregate AI-adoption-phase cohort rows (totals_by_ai_adoption_phase) ──
+
+export interface FactOrgAdoptionPhaseRow {
+  day: string;
+  orgLogin: string | null;
+  scope: "enterprise" | "organization";
+  phaseNumber: number;
+  phaseLabel: string | null;
+  totalEngagedUsers: number;
+  avgUserInitiatedInteractions: string | null;
+  avgCodeGenerationActivities: string | null;
+  avgCodeAcceptanceActivities: string | null;
+  avgLocAdded: string | null;
+  avgLocDeleted: string | null;
+  avgPullRequestsCreated: string | null;
+  avgPullRequestsMerged: string | null;
+  avgPullRequestsReviewed: string | null;
+  avgPullRequestsMedianMinutesToMerge: string | null;
+  totalPullRequestsMerged: number | null;
+}
+
+/**
+ * Expand an aggregate record's `totals_by_ai_adoption_phase` into one row per
+ * phase. Phases outside the documented 0–3 range are dropped. `avg_*` values are
+ * stringified for the `numeric` columns.
+ */
+export function transformToFactOrgAdoptionPhase(
+  record: CopilotAggregateRecord
+): FactOrgAdoptionPhaseRow[] {
+  return (record.totals_by_ai_adoption_phase ?? [])
+    .filter(
+      (p) =>
+        typeof p.phase_number === "number" && p.phase_number >= 0 && p.phase_number <= 3
+    )
+    .map((p) => ({
+      day: record.day,
+      orgLogin: record._orgLogin ?? null,
+      scope: record._scope ?? "organization",
+      phaseNumber: p.phase_number,
+      phaseLabel: p.phase ?? null,
+      totalEngagedUsers: p.total_engaged_users ?? 0,
+      avgUserInitiatedInteractions: numericOrNull(p.avg_user_initiated_interactions),
+      avgCodeGenerationActivities: numericOrNull(p.avg_code_generation_activities),
+      avgCodeAcceptanceActivities: numericOrNull(p.avg_code_acceptance_activities),
+      avgLocAdded: numericOrNull(p.avg_loc_added),
+      avgLocDeleted: numericOrNull(p.avg_loc_deleted),
+      avgPullRequestsCreated: numericOrNull(p.avg_pull_requests_created),
+      avgPullRequestsMerged: numericOrNull(p.avg_pull_requests_merged),
+      avgPullRequestsReviewed: numericOrNull(p.avg_pull_requests_reviewed),
+      avgPullRequestsMedianMinutesToMerge: numericOrNull(
+        p.avg_pull_requests_median_minutes_to_merge
+      ),
+      totalPullRequestsMerged: p.total_pull_requests_merged ?? null,
+    }));
+}
+
+// ── Aggregate PR copilot-suggestion-by-comment-type rows ──
+
+export interface FactOrgPrCommentTypeRow {
+  day: string;
+  orgLogin: string | null;
+  scope: "enterprise" | "organization";
+  commentType: string;
+  totalCopilotSuggestions: number;
+  totalCopilotAppliedSuggestions: number;
+}
+
+/**
+ * Expand `pull_requests.copilot_suggestions_by_comment_type` into one row per
+ * comment type. Entries without a comment type are dropped.
+ */
+export function transformToFactOrgPrCommentTypes(
+  record: CopilotAggregateRecord
+): FactOrgPrCommentTypeRow[] {
+  return (record.pull_requests?.copilot_suggestions_by_comment_type ?? [])
+    .filter((c) => typeof c.comment_type === "string" && c.comment_type.length > 0)
+    .map((c) => ({
+      day: record.day,
+      orgLogin: record._orgLogin ?? null,
+      scope: record._scope ?? "organization",
+      commentType: c.comment_type,
+      totalCopilotSuggestions: c.total_copilot_suggestions ?? 0,
+      totalCopilotAppliedSuggestions: c.total_copilot_applied_suggestions ?? 0,
+    }));
 }

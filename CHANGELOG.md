@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Guided GitHub connection setup** — Settings is reorganized into an Overview hub plus dedicated **GitHub Token** and **API Access** pages: step-by-step token creation with the required scopes, live connection status (who you're connected as, enterprise, discovered orgs, last-checked time), enterprise-slug extraction from a pasted URL, per-organization SAML SSO guidance, and a live endpoint-access checker
+- **Per-organization access probe** — `/api/settings/token-setup/org-access` reports each enterprise organization as authorized / SAML-required / forbidden / not-found without ever returning the token
+- **Official GitHub typography** — self-hosted **Mona Sans** (UI) and **Monaspace Neon** (code) fonts, bundled with their SIL Open Font licenses
+- **Additional Copilot Usage Metrics surfaces** — per-adoption-phase merged-PR totals (`total_pull_requests_merged`), PR suggestion apply-rate by comment type on the PR & Autofix report, a seat "never authenticated" KPI and column on the Licensing report, and cloud-agent / code-review surface engagement on the Copilot Usage report
+- **Release automation** — categorized auto-generated release notes (`.github/release.yml`) grouped by pull-request label, an optional AI-written "Highlights" summary via GitHub Models, and an admin-only, environment-approved release pipeline
+- **Supply-chain & security CI** — unit tests and lint in CI, CodeQL SAST, dependency review on pull requests, Trivy IaC/secret and container scans with a fixable-CVE gate, a weekly scheduled image re-scan, SBOM + build-provenance attestation on published images, and a `CODEOWNERS` gate on workflow changes
+- **Container healthcheck** — the runtime image defines a `HEALTHCHECK` against `/api/health`
+
+### Changed
+
+- **Container publishing & releases** — the image publishes to GHCR on `main` and on `v*` tags gated behind the `production` environment; GitHub Releases are created only after publish, gated behind the `release` environment
+- **Copilot CLI / SDK** — bumped `@github/copilot` to `1.0.68` and `@github/copilot-sdk` to `1.0.5`; the pinned CLI in the Docker `copilot-cli` stage now tracks the lockfile via a `pnpm-workspace.yaml` override
+- **Internationalization** — added a `tokenPage` translation namespace plus the new Settings overview / API-access strings across all locales (en/es/ar/fr)
+
+### Fixed
+
+- **PR & Autofix metric scoping** — the pull-requests API no longer mixes enterprise and organization aggregate rows; it scopes to enterprise rows by default and to organization rows when an organization filter is applied, and `total_pull_requests_merged` is stored as a nullable column with no default
+
+### Security
+
+- **Hardened runtime image** — removed `npm` (and its bundled `undici` / `tar` / `minimatch` / `ip-address` / `brace-expansion`) from the final image and `apk upgrade`-d base OS packages (e.g. `zlib`), clearing the outstanding container CVEs (Trivy image scan reports zero)
+- **Least-privilege CI** — top-level `contents: read` with per-job elevation, environment-approval gates for image publish and release, and admin-only release triggering
+
+## [1.1.0] — 2026-06-27
+
+### Added
+
+- **Copilot Usage Metrics API `2026-03-10` schema coverage** — ingest GitHub's expanded enterprise/organization aggregate report: 9 new surface-level active-user variants (cloud-agent + code-review active/passive across daily/weekly/monthly) on `fact_org_aggregate_daily`, GitHub-measured per-phase cohort outcomes in the new `fact_org_adoption_phase_daily` table (`totals_by_ai_adoption_phase`), and PR suggestion apply-rate by comment type in the new `fact_org_pr_comment_type_daily` table
+- **AI Adoption maturity outcomes** — the `/ai-adoption` report and `/api/metrics/ai-adoption` now surface GitHub-measured per-cohort pull-request outcomes (average PRs merged/reviewed and time-to-merge)
+- **Seat authentication signal** — `fact_copilot_seat_assignment.last_authenticated_at` captures when a seat holder last authenticated, enabling onboarding-gap vs idle-waste detection
+- **AI Analyst grounding** — the Adoption Coach narrates measured per-phase productivity uplift, the Cost analyst separates never-authenticated seats from idle ones, the Delivery analyst reports apply-rate by PR comment type, and the Executive briefer gains per-surface (cloud-agent / code-review) engagement
+- Idempotent migration `0026_friendly_corsair.sql` for the new columns and tables
+
+### Changed
+
+- **Enterprise org discovery** — replaced the non-existent `GET /enterprises/{slug}/organizations` REST route (returns 404 for every token, including full `admin:enterprise`) with the GraphQL `enterprise.organizations` connection, falling back to `GET /user/orgs`
+- **AI adoption phase parsing** — reads the canonical numeric `ai_adoption_phase.phase_number` from the live API instead of relying on a label regex
+- **AI Analyst prompt version** → `ai-analyst-v8` (invalidates cached `ai_insights` narratives)
+
+### Fixed
+
+- **Enterprise aggregate duplication** — the enterprise-scope aggregate upsert silently duplicated rows on every re-ingest (nullable `org_id` + Postgres `NULLS DISTINCT` defeated `ON CONFLICT`); the aggregate, phase, and comment-type tables now use idempotent delete-then-insert keyed by `(day, scope, org)`
+
+### Removed
+
+- **Dead `chat_panel_*_mode` fields** — never emitted by the live API; removed from the usage-record type and the unused 403/404 REST helper
+
 ## [0.9.0] — 2026-06-17
 
 ### Added

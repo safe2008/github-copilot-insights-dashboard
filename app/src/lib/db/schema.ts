@@ -268,6 +268,7 @@ export const factCopilotSeatAssignment = pgTable(
     seatUpdatedAt: timestamp("seat_updated_at", { withTimezone: true }),
     pendingCancellationDate: date("pending_cancellation_date"),
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
+    lastAuthenticatedAt: timestamp("last_authenticated_at", { withTimezone: true }),
     lastActivityEditor: varchar("last_activity_editor", { length: 255 }),
     rawJson: jsonb("raw_json"),
     capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
@@ -427,6 +428,17 @@ export const factOrgAggregateDaily = pgTable(
     monthlyActiveAgentUsers: integer("monthly_active_agent_users").default(0),
     monthlyActiveChatUsers: integer("monthly_active_chat_users").default(0),
     dailyActiveCliUsers: integer("daily_active_cli_users").default(0),
+    // Surface-level engaged-user variants (Copilot Usage Metrics API, 2026-03-10):
+    // cloud agent + code review (active/passive) across daily/weekly/monthly.
+    dailyActiveCloudAgentUsers: integer("daily_active_copilot_cloud_agent_users").default(0),
+    weeklyActiveCloudAgentUsers: integer("weekly_active_copilot_cloud_agent_users").default(0),
+    monthlyActiveCloudAgentUsers: integer("monthly_active_copilot_cloud_agent_users").default(0),
+    dailyActiveCodeReviewUsers: integer("daily_active_copilot_code_review_users").default(0),
+    weeklyActiveCodeReviewUsers: integer("weekly_active_copilot_code_review_users").default(0),
+    monthlyActiveCodeReviewUsers: integer("monthly_active_copilot_code_review_users").default(0),
+    dailyPassiveCodeReviewUsers: integer("daily_passive_copilot_code_review_users").default(0),
+    weeklyPassiveCodeReviewUsers: integer("weekly_passive_copilot_code_review_users").default(0),
+    monthlyPassiveCodeReviewUsers: integer("monthly_passive_copilot_code_review_users").default(0),
     // Pull Request metrics
     prTotalCreated: integer("pr_total_created").default(0),
     prTotalReviewed: integer("pr_total_reviewed").default(0),
@@ -446,6 +458,56 @@ export const factOrgAggregateDaily = pgTable(
   (table) => [
     uniqueIndex("idx_fact_org_agg_unique").on(table.day, table.orgId, table.scope),
     index("idx_fact_org_agg_day").on(table.day),
+  ]
+);
+
+// Per-phase aggregate cohort outcomes (the `totals_by_ai_adoption_phase` block
+// of the enterprise/organization aggregate report, 2026-03-10). One row per
+// (day, scope, org, phase). `avg_*` are GitHub-computed per-phase averages over
+// the report's engaged users. numeric inserted as String(n); SUM with ::float8.
+export const factOrgAdoptionPhaseDaily = pgTable(
+  "fact_org_adoption_phase_daily",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    day: date("day").notNull(),
+    orgId: integer("org_id").references(() => dimOrg.orgId),
+    scope: varchar("scope", { length: 20 }).default("organization").notNull(),
+    phaseNumber: smallint("phase_number").notNull(),
+    phaseLabel: varchar("phase_label", { length: 32 }),
+    totalEngagedUsers: integer("total_engaged_users").default(0),
+    avgUserInitiatedInteractions: numeric("avg_user_initiated_interactions"),
+    avgCodeGenerationActivities: numeric("avg_code_generation_activities"),
+    avgCodeAcceptanceActivities: numeric("avg_code_acceptance_activities"),
+    avgLocAdded: numeric("avg_loc_added"),
+    avgLocDeleted: numeric("avg_loc_deleted"),
+    avgPullRequestsCreated: numeric("avg_pull_requests_created"),
+    avgPullRequestsMerged: numeric("avg_pull_requests_merged"),
+    avgPullRequestsReviewed: numeric("avg_pull_requests_reviewed"),
+    avgPullRequestsMedianMinutesToMerge: numeric("avg_pull_requests_median_minutes_to_merge"),
+    totalPullRequestsMerged: integer("total_pull_requests_merged"),
+  },
+  (table) => [
+    uniqueIndex("idx_fact_org_phase_unique").on(table.day, table.orgId, table.scope, table.phaseNumber),
+    index("idx_fact_org_phase_day").on(table.day, table.phaseNumber),
+  ]
+);
+
+// PR Copilot suggestion counts split by comment type
+// (`pull_requests.copilot_suggestions_by_comment_type`, 2026-03-10).
+export const factOrgPrCommentTypeDaily = pgTable(
+  "fact_org_pr_comment_type_daily",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    day: date("day").notNull(),
+    orgId: integer("org_id").references(() => dimOrg.orgId),
+    scope: varchar("scope", { length: 20 }).default("organization").notNull(),
+    commentType: varchar("comment_type", { length: 100 }).notNull(),
+    totalCopilotSuggestions: integer("total_copilot_suggestions").default(0),
+    totalCopilotAppliedSuggestions: integer("total_copilot_applied_suggestions").default(0),
+  },
+  (table) => [
+    uniqueIndex("idx_fact_org_pr_comment_unique").on(table.day, table.orgId, table.scope, table.commentType),
+    index("idx_fact_org_pr_comment_day").on(table.day),
   ]
 );
 

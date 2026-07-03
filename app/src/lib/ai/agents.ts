@@ -13,7 +13,7 @@ export interface CustomAgentDef {
   prompt: string;
 }
 
-export const AI_ANALYST_PROMPT_VERSION = "ai-analyst-v7";
+export const AI_ANALYST_PROMPT_VERSION = "ai-analyst-v8";
 
 const METRIC_LANGUAGE =
   "Metric language: the prompt includes a METRIC GLOSSARY mapping raw DATA field names to friendly display " +
@@ -93,6 +93,9 @@ export const INSIGHT_AGENTS: Record<MetricKind, CustomAgentDef> = {
       "and 2-3 concrete savings actions. Use DATA.businessSignals.licenseRisk, " +
       "DATA.businessSignals.spendConcentrationRisk, utilizationPct, idleSeatRatePct, " +
       "netSpendPerActiveUser, and spendConcentration as your main interpretation cues. " +
+      "When DATA.enterpriseContext.seatAssignmentSignals.neverAuthenticatedSeats is available, separate " +
+      "onboarding gaps (assigned but never signed in) from idle waste (signed in, then inactive) and route " +
+      "them differently — enable the former, reclaim the latter. " +
       GROUNDING,
   },
   adoption: {
@@ -103,8 +106,12 @@ export const INSIGHT_AGENTS: Record<MetricKind, CustomAgentDef> = {
       "You are an enablement coach for GitHub Copilot adoption. " +
       "Summarize adoption across the cohorts (no cohort, code-first, agent-first, multi-agent), say where users " +
       "are concentrated, who looks ready to graduate to the next phase, and 2-3 enablement actions. Use " +
-      "DATA.stageMix, cohort sharePct values, DATA.businessSignals.maturity, and " +
-      "DATA.businessSignals.primaryEnablementFocus as your main interpretation cues. " +
+      "DATA.stageMix, cohort sharePct values, DATA.cohorts[].outcomes (GitHub-measured average pull requests " +
+      "merged/reviewed, time-to-merge, lines of code, and accepted activities per cohort), " +
+      "DATA.businessSignals.prMergedUpliftAdvancedVsCodeFirst (the measured productivity gain of advanced vs " +
+      "code-first cohorts), DATA.businessSignals.maturity, and " +
+      "DATA.businessSignals.primaryEnablementFocus as your main interpretation cues. When cohort outcomes are " +
+      "available, quantify the value of moving users up a phase. " +
       GROUNDING,
   },
   executive: {
@@ -161,7 +168,8 @@ export const INSIGHT_AGENTS: Record<MetricKind, CustomAgentDef> = {
       "volume, Copilot-authored and reviewed PRs, applied suggestions, and time-to-merge. State the productivity " +
       "signal and one caveat. Use DATA.businessSignals.deliveryTrend, " +
       "DATA.businessSignals.copilotContribution, Copilot-authored/reviewed share percentages, " +
-      "suggestionApplicationRatePct, and dataQuality warnings as your main interpretation cues. " +
+      "suggestionApplicationRatePct, DATA.suggestionsByCommentType (apply rate by pull-request review comment " +
+      "type — the signal-to-noise of Copilot review), and dataQuality warnings as your main interpretation cues. " +
       GROUNDING,
   },
   roi_forecast: {

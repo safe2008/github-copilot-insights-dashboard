@@ -9,6 +9,8 @@ export const dynamic = "force-dynamic";
 
 const GITHUB_API_BASE = "https://api.github.com";
 const API_VERSION = "2026-03-10";
+const PREMIUM_REQUESTS_LAST_YEAR = 2026;
+const PREMIUM_REQUESTS_LAST_MONTH = 5;
 
 /** Per-user/month included premium request quotas by plan. */
 const PLAN_QUOTAS: Record<string, number> = {
@@ -81,6 +83,17 @@ function shiftMonth(year: number, month: number, delta: number): { year: number;
   return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
 }
 
+function isAfterPremiumRequestsCutoff(year: number, month: number): boolean {
+  return year > PREMIUM_REQUESTS_LAST_YEAR ||
+    (year === PREMIUM_REQUESTS_LAST_YEAR && month > PREMIUM_REQUESTS_LAST_MONTH);
+}
+
+function clampPremiumRequestsPeriod(year: number, month: number): { year: number; month: number } {
+  return isAfterPremiumRequestsCutoff(year, month)
+    ? { year: PREMIUM_REQUESTS_LAST_YEAR, month: PREMIUM_REQUESTS_LAST_MONTH }
+    : { year, month };
+}
+
 async function fetchUsageItems(token: string, enterpriseSlug: string, year: number, month: number): Promise<BillingUsageItem[]> {
   const usageUrl = `${GITHUB_API_BASE}/enterprises/${encodeURIComponent(enterpriseSlug)}/settings/billing/premium_request/usage?year=${year}&month=${month}`;
   const usageRes = await fetch(usageUrl, {
@@ -139,8 +152,16 @@ export async function GET(request: NextRequest) {
       team: sp.get("team") ?? undefined,
     });
 
-    const year = parsed.year ?? now.getFullYear();
-    const month = parsed.month ?? now.getMonth() + 1;
+    const defaultPeriod = clampPremiumRequestsPeriod(now.getFullYear(), now.getMonth() + 1);
+    const year = parsed.year ?? defaultPeriod.year;
+    const month = parsed.month ?? defaultPeriod.month;
+
+    if (isAfterPremiumRequestsCutoff(year, month)) {
+      return NextResponse.json(
+        { error: "Premium Requests data is only available through May 2026. Use the AI Credits report for June 2026 and later." },
+        { status: 400 },
+      );
+    }
 
     const selectedFilters = {
       model: parseCsvSet(parsed.model),
@@ -317,7 +338,8 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => a.date.localeCompare(b.date));
 
     // 7. Build monthly trend (selected + previous 5 months) and period-over-period deltas.
-    const monthPoints = Array.from({ length: 6 }, (_, idx) => shiftMonth(year, month, idx - 5));
+    const monthPoints = Array.from({ length: 6 }, (_, idx) => shiftMonth(year, month, idx - 5))
+      .filter((point) => !isAfterPremiumRequestsCutoff(point.year, point.month));
     const monthlyTrend = await Promise.all(
       monthPoints.map(async (point) => {
         let monthItems: BillingUsageItem[] = [];

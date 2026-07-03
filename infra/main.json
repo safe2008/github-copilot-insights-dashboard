@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "4265432977620426541"
+      "templateHash": "3244225734241716095"
     }
   },
   "parameters": {
@@ -115,7 +115,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "13603401391942393427"
+              "templateHash": "5738623624239364265"
             }
           },
           "parameters": {
@@ -226,7 +226,8 @@
                 "tenantId": "[subscription().tenantId]",
                 "enableRbacAuthorization": true,
                 "enableSoftDelete": true,
-                "softDeleteRetentionInDays": 90
+                "softDeleteRetentionInDays": 90,
+                "enablePurgeProtection": true
               }
             },
             {
@@ -298,7 +299,8 @@
               "apiVersion": "2023-07-01",
               "name": "[format('{0}/{1}', format('azkv{0}', variables('resourceToken')), 'DATABASE-URL')]",
               "properties": {
-                "value": "[format('postgresql://{0}:{1}@{2}:5432/copilot_insights?sslmode=require', parameters('postgresAdminUser'), variables('postgresAdminPassword'), reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('azpg{0}', variables('resourceToken'))), '2025-08-01').fullyQualifiedDomainName)]"
+                "value": "[format('postgresql://{0}:{1}@{2}:5432/copilot_insights?sslmode=require', parameters('postgresAdminUser'), variables('postgresAdminPassword'), reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', format('azpg{0}', variables('resourceToken'))), '2025-08-01').fullyQualifiedDomainName)]",
+                "contentType": "PostgreSQL connection string"
               },
               "dependsOn": [
                 "[resourceId('Microsoft.KeyVault/vaults', format('azkv{0}', variables('resourceToken')))]",
@@ -311,7 +313,8 @@
               "apiVersion": "2023-07-01",
               "name": "[format('{0}/{1}', format('azkv{0}', variables('resourceToken')), 'GITHUB-TOKEN')]",
               "properties": {
-                "value": "[parameters('githubToken')]"
+                "value": "[parameters('githubToken')]",
+                "contentType": "GitHub personal access token"
               },
               "dependsOn": [
                 "[resourceId('Microsoft.KeyVault/vaults', format('azkv{0}', variables('resourceToken')))]"
@@ -322,7 +325,8 @@
               "apiVersion": "2023-07-01",
               "name": "[format('{0}/{1}', format('azkv{0}', variables('resourceToken')), 'ADMIN-PASSWORD')]",
               "properties": {
-                "value": "[parameters('adminPassword')]"
+                "value": "[parameters('adminPassword')]",
+                "contentType": "Dashboard admin password"
               },
               "dependsOn": [
                 "[resourceId('Microsoft.KeyVault/vaults', format('azkv{0}', variables('resourceToken')))]"
@@ -334,7 +338,8 @@
               "apiVersion": "2023-07-01",
               "name": "[format('{0}/{1}', format('azkv{0}', variables('resourceToken')), 'DASHBOARD-PASSWORD')]",
               "properties": {
-                "value": "[parameters('dashboardPassword')]"
+                "value": "[parameters('dashboardPassword')]",
+                "contentType": "Dashboard access password"
               },
               "dependsOn": [
                 "[resourceId('Microsoft.KeyVault/vaults', format('azkv{0}', variables('resourceToken')))]"

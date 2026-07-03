@@ -41,25 +41,35 @@ const postSchema = z.object({
 export async function POST(request: NextRequest) {
   try {
     const body = postSchema.parse(await request.json());
+    const existing = await getAiConfig();
+    const submittedToken = body.token?.trim();
+    const hasSubmittedToken = submittedToken !== undefined && submittedToken.length > 0;
 
-    if (body.token !== undefined && body.token !== "") {
-      const formatReason = validateCopilotToken(body.token);
+    if (body.enabled && !existing.token && !hasSubmittedToken) {
+      return NextResponse.json(
+        { error: "Copilot token is required to enable AI Analyst." },
+        { status: 400 },
+      );
+    }
+
+    if (hasSubmittedToken) {
+      const formatReason = validateCopilotToken(submittedToken);
       if (formatReason) return NextResponse.json({ error: formatReason }, { status: 400 });
 
       // Verify the token with a minimal live Copilot call before persisting it.
-      const live = await validateCopilotTokenLive(body.token);
+      const live = await validateCopilotTokenLive(submittedToken);
       if (!live.ok) return NextResponse.json({ error: live.reason }, { status: 400 });
     }
 
     await setAiConfig({
       enabled: body.enabled,
-      token: body.token === "" ? undefined : body.token,
+      token: hasSubmittedToken ? submittedToken : undefined,
       model: body.model,
       additionalInstructions: body.additionalInstructions,
     });
 
     // A new token means the in-process client must be recreated.
-    const tokenChanged = body.token !== undefined && body.token !== "";
+    const tokenChanged = hasSubmittedToken;
     if (tokenChanged) await resetCopilotClient();
 
     logAudit({

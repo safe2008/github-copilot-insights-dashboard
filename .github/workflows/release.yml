@@ -1,0 +1,88 @@
+name: Release
+
+# Admin-only: creates and pushes a v* tag. Pushing the tag triggers the CI
+# workflow, which validates the commit, publishes the versioned GHCR image
+# (environment: production), then creates the GitHub Release (environment:
+# release). Both promotion steps are gated by environment approval.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "New v* tag to create (example: v1.1.0)"
+        required: true
+        type: string
+      target:
+        description: "Commit SHA or branch to tag"
+        required: false
+        default: "main"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  create-tag:
+    name: Create & Push Tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event.sender.login == 'amgdy'
+    permissions:
+      contents: write
+    steps:
+      - name: Validate release inputs
+        env:
+          TAG_NAME: ${{ github.event.inputs.tag }}
+          TARGET_REF: ${{ github.event.inputs.target }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$TAG_NAME" != v* ]]; then
+            echo "::error::Release tag must start with 'v' (got '$TAG_NAME')."
+            exit 1
+          fi
+
+          if [[ -z "$TARGET_REF" ]]; then
+            echo "::error::Target ref is required."
+            exit 1
+          fi
+
+      - name: Checkout target
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.target }}
+          fetch-depth: 0
+
+      - name: Create and push tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if git rev-parse -q --verify "refs/tags/$TAG_NAME" >/dev/null; then
+            echo "::error::Tag $TAG_NAME already exists locally."
+            exit 1
+          fi
+
+          if gh api "repos/$GH_REPO/git/ref/tags/$TAG_NAME" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG_NAME already exists on GitHub."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG_NAME" -m "$TAG_NAME"
+          git push origin "$TAG_NAME"
+
+      - name: Summary
+        env:
+          TAG_NAME: ${{ github.event.inputs.tag }}
+        run: |
+          echo "Pushed tag $TAG_NAME." >> "$GITHUB_STEP_SUMMARY"
+          echo "CI will validate it, then publish the image and create the release after environment approval." >> "$GITHUB_STEP_SUMMARY"

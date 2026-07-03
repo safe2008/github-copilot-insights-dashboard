@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { factCopilotUsageDaily } from "@/lib/db/schema";
-import { sql, and, gte, lte, isNotNull, desc } from "drizzle-orm";
+import { factCopilotUsageDaily, factOrgAdoptionPhaseDaily } from "@/lib/db/schema";
+import { sql, and, gte, lte, isNotNull, desc, eq, isNull } from "drizzle-orm";
 import { daysAgo, isValidDate } from "@/lib/utils";
 import { z } from "zod";
 import { resolveUserNames } from "@/lib/github/resolve-display-names";
@@ -25,6 +25,14 @@ const PHASE_META = AI_ADOPTION_PHASES.map((phase) => ({
   label: AI_ADOPTION_PHASE_LABELS[phase],
 }));
 
+function parseCsvInts(value?: string): number[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => !isNaN(n));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const sp = request.nextUrl.searchParams;
@@ -42,6 +50,39 @@ export async function GET(request: NextRequest) {
     const startDate = params.start ?? daysAgo(params.days ?? 28);
     const { userIds, teamFilterApplied, selectedGithubTeamIds } =
       await resolveTeamAwareUserFilter(params);
+    const orgIds = parseCsvInts(params.orgId);
+    const hasUserOrTeamFilter =
+      params.userId != null || Boolean(params.teamName) || Boolean(params.teamId) || teamFilterApplied;
+
+    const phaseOutcomeRowsQuery = () => {
+      if (hasUserOrTeamFilter || orgIds.length > 1) return Promise.resolve([]);
+
+      const outcomeConds = [
+        gte(factOrgAdoptionPhaseDaily.day, startDate),
+        lte(factOrgAdoptionPhaseDaily.day, endDate),
+      ];
+
+      if (orgIds.length === 1) {
+        outcomeConds.push(eq(factOrgAdoptionPhaseDaily.scope, "organization"));
+        outcomeConds.push(eq(factOrgAdoptionPhaseDaily.orgId, orgIds[0]));
+      } else {
+        outcomeConds.push(eq(factOrgAdoptionPhaseDaily.scope, "enterprise"));
+        outcomeConds.push(isNull(factOrgAdoptionPhaseDaily.orgId));
+      }
+
+      return db
+        .select({
+          day: factOrgAdoptionPhaseDaily.day,
+          phaseNumber: factOrgAdoptionPhaseDaily.phaseNumber,
+          engagedUsers: factOrgAdoptionPhaseDaily.totalEngagedUsers,
+          avgPrsMerged: factOrgAdoptionPhaseDaily.avgPullRequestsMerged,
+          avgPrsReviewed: factOrgAdoptionPhaseDaily.avgPullRequestsReviewed,
+          avgMinutesToMerge: factOrgAdoptionPhaseDaily.avgPullRequestsMedianMinutesToMerge,
+          totalPrsMerged: factOrgAdoptionPhaseDaily.totalPullRequestsMerged,
+        })
+        .from(factOrgAdoptionPhaseDaily)
+        .where(and(...outcomeConds));
+    };
 
     // Shared WHERE: date window + team-aware filter + only classified rows.
     const classifiedWhere = () => {
@@ -61,7 +102,7 @@ export async function GET(request: NextRequest) {
       return and(...conds);
     };
 
-    const [latestPhasePerUser, progressionRows, perPhaseRows, topUserRows] =
+    const [latestPhasePerUser, progressionRows, perPhaseRows, topUserRows, phaseOutcomeRows] =
       await Promise.all([
         // 1. Each user's most-recent classified phase within the window.
         db
@@ -117,6 +158,12 @@ export async function GET(request: NextRequest) {
           .groupBy(factCopilotUsageDaily.userId, factCopilotUsageDaily.userLogin)
           .orderBy(sql`SUM(${factCopilotUsageDaily.userInitiatedInteractionCount}) DESC`)
           .limit(200),
+
+        // 5. GitHub-measured per-phase pull-request outcomes. These are
+        //    pre-aggregated, so only use them when the aggregate scope matches
+        //    the report scope (enterprise-wide or one org); user/team filters
+        //    intentionally receive null outcome columns.
+        phaseOutcomeRowsQuery(),
       ]);
 
     // ── Current-phase distribution (each user counted once, by latest phase) ──
@@ -168,10 +215,21 @@ export async function GET(request: NextRequest) {
 
     // ── Per-phase averaged metrics ──
     const perPhaseRowMap = new Map(perPhaseRows.map((r) => [Number(r.phase), r]));
+    // GitHub-measured per-phase PR outcomes from the latest matching aggregate day.
+    const latestOutcomeDay = phaseOutcomeRows.reduce<string | null>(
+      (m, r) => (m === null || String(r.day) > m ? String(r.day) : m),
+      null,
+    );
+    const outcomeMap = new Map<number, (typeof phaseOutcomeRows)[number]>();
+    for (const r of phaseOutcomeRows) {
+      if (String(r.day) === latestOutcomeDay) outcomeMap.set(Number(r.phaseNumber), r);
+    }
+    const numOrNull = (v: string | null | undefined): number | null => (v != null ? Number(v) : null);
     const avg = (sum: number, users: number) =>
       users > 0 ? Math.round((sum / users) * 10) / 10 : 0;
     const perPhaseMetrics = PHASE_META.map((p) => {
       const r = perPhaseRowMap.get(p.phase);
+      const o = outcomeMap.get(p.phase);
       const users = Number(r?.users ?? 0);
       return {
         phase: p.phase,
@@ -185,6 +243,10 @@ export async function GET(request: NextRequest) {
         avgLocDeleted: avg(Number(r?.sumLocDeleted ?? 0), users),
         avgAiCredits: avg(Number(r?.sumAiCredits ?? 0), users),
         totalAiCredits: Math.round(Number(r?.sumAiCredits ?? 0) * 100) / 100,
+        avgPrsMerged: numOrNull(o?.avgPrsMerged),
+        avgPrsReviewed: numOrNull(o?.avgPrsReviewed),
+        avgMinutesToMerge: numOrNull(o?.avgMinutesToMerge),
+        totalPrsMerged: o?.totalPrsMerged ?? null,
       };
     });
 

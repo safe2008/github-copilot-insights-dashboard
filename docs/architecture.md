@@ -142,7 +142,9 @@ The database follows a **star schema** design optimized for analytics queries.
 | `fact_user_language_daily` | One row per user per language per day |
 | `fact_user_language_model_daily` | One row per user per language per model per day |
 | `fact_cli_daily` | One row per user per CLI version per day (sessions, requests, tokens) |
-| `fact_org_aggregate_daily` | One row per org per day — PR metrics, Copilot code review & autofix data |
+| `fact_org_aggregate_daily` | One row per org/enterprise per day — active-user counts (incl. cloud-agent and code-review active/passive surfaces), PR metrics, Copilot code review & autofix data |
+| `fact_org_adoption_phase_daily` | One row per AI-adoption phase per scope per day — GitHub-measured per-cohort outcomes (engaged users, avg PRs merged/reviewed, time-to-merge, LOC) |
+| `fact_org_pr_comment_type_daily` | One row per PR review comment type per scope per day — Copilot suggestion and applied-suggestion counts (apply-rate analytics) |
 | `fact_ai_credit_usage` | Monthly AI credit billing snapshot rows for trailing trends and breakdown analytics |
 
 ### Supporting Tables
