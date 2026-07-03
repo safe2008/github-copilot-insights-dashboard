@@ -112,6 +112,9 @@ jobs:
         with:
           scan-type: config
           scan-ref: .
+          # Dev-only container: not a production image, so exclude it from the
+          # Dockerfile best-practice (non-root USER / HEALTHCHECK) checks.
+          skip-dirs: .devcontainer
           format: sarif
           output: trivy-config.sarif
           severity: CRITICAL,HIGH,MEDIUM
