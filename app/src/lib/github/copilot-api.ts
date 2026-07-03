@@ -622,10 +622,7 @@ export async function listEnterpriseOrgs(opts: {
       orgs: fallback.orgs,
       apiRequestCount: apiRequestCount + fallback.apiRequestCount,
     };
-    } catch (err) {
-      if (!(err instanceof NonRetryableError)) {
-        throw err;
-      }
+  } catch (err) {
     console.warn(
       `Enterprise organizations via GraphQL unavailable (${(err as Error).message}). ` +
       `Falling back to GET /user/orgs (may under-count enterprise organizations).`

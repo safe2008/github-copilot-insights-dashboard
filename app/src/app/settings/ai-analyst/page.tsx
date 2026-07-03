@@ -141,7 +141,7 @@ export default function AiAnalystSettingsPage() {
     setSaving(true);
     setMessage(null);
     const hadToken = !!tokenInput.trim();
-    if (!hadToken && !settings?.configured) {
+    if (enabled && !hadToken && !settings?.configured) {
       setMessage({ type: "error", text: t("aiSettings.tokenRequired") });
       setSaving(false);
       return;

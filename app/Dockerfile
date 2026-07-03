@@ -1,12 +1,12 @@
 FROM node:26-alpine AS deps
 WORKDIR /app
-RUN npm install --global --no-audit --no-fund pnpm@11.5.1
+RUN npm install --global --no-audit --no-fund pnpm@11.9.0
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile --ignore-scripts && pnpm store prune
 
 FROM node:26-alpine AS builder
 WORKDIR /app
-RUN npm install --global --no-audit --no-fund pnpm@11.5.1
+RUN npm install --global --no-audit --no-fund pnpm@11.9.0
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1

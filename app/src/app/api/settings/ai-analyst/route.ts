@@ -45,8 +45,11 @@ export async function POST(request: NextRequest) {
     const submittedToken = body.token?.trim();
     const hasSubmittedToken = submittedToken !== undefined && submittedToken.length > 0;
 
-    if (!existing.token && !hasSubmittedToken) {
-      return NextResponse.json({ error: "Copilot token is required." }, { status: 400 });
+    if (body.enabled && !existing.token && !hasSubmittedToken) {
+      return NextResponse.json(
+        { error: "Copilot token is required to enable AI Analyst." },
+        { status: 400 },
+      );
     }
 
     if (hasSubmittedToken) {
