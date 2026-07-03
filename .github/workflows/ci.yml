@@ -199,7 +199,7 @@ jobs:
     name: Push to GitHub Container Registry
     runs-on: ubuntu-latest
     needs: [codeql, config-scan, docker]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     environment: production
     timeout-minutes: 20
     permissions:
@@ -229,6 +229,7 @@ jobs:
           tags: |
             type=sha,prefix=
             type=ref,event=branch
+            type=ref,event=tag
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
@@ -253,3 +254,93 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: push
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment: release
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      models: read
+    steps:
+      - name: Generate release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Previous published release (if any) bounds the notes range.
+          prev="$(gh api "repos/$GH_REPO/releases/latest" --jq .tag_name 2>/dev/null || true)"
+
+          # Categorized notes (respects .github/release.yml): PRs, issues, contributors.
+          if [[ -n "$prev" ]]; then
+            notes="$(gh api "repos/$GH_REPO/releases/generate-notes" \
+              -f tag_name="$TAG_NAME" -f previous_tag_name="$prev" --jq .body)"
+          else
+            notes="$(gh api "repos/$GH_REPO/releases/generate-notes" \
+              -f tag_name="$TAG_NAME" --jq .body)"
+          fi
+
+          {
+            echo "notes<<RELEASE_NOTES_EOF"
+            echo "$notes"
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summarize release with AI
+        id: ai
+        continue-on-error: true
+        uses: actions/ai-inference@v1
+        with:
+          model: openai/gpt-4o-mini
+          system-prompt: >-
+            You are a release-notes editor. Write a concise "Highlights" section
+            of 3-6 markdown bullets for a technical audience, based only on the
+            provided notes. No preamble, no headings, no invented items.
+          prompt: |
+            Repository: ${{ github.repository }}
+            Release tag: ${{ github.ref_name }}
+
+            Auto-generated notes:
+            ${{ steps.notes.outputs.notes }}
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+          NOTES: ${{ steps.notes.outputs.notes }}
+          AI_SUMMARY: ${{ steps.ai.outputs.response }}
+        run: |
+          set -euo pipefail
+
+          body_file="$(mktemp)"
+          # Prepend the AI highlights only when the step produced non-empty text.
+          if [[ -n "${AI_SUMMARY//[[:space:]]/}" ]]; then
+            {
+              echo "## ✨ Highlights (AI-generated)"
+              echo
+              echo "$AI_SUMMARY"
+              echo
+              echo "---"
+              echo
+            } >> "$body_file"
+          fi
+          printf '%s\n' "$NOTES" >> "$body_file"
+
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Release $TAG_NAME exists; updating notes."
+            gh release edit "$TAG_NAME" --title "$TAG_NAME" --notes-file "$body_file"
+          else
+            gh release create "$TAG_NAME" \
+              --title "$TAG_NAME" \
+              --latest \
+              --verify-tag \
+              --notes-file "$body_file"
+          fi

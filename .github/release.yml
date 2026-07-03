@@ -1,0 +1,39 @@
+# Configuration for GitHub's automatically generated release notes.
+# Applied by `gh api .../releases/generate-notes` and the Release workflow.
+# Docs: https://docs.github.com/repositories/releasing-projects-on-github/automatically-generated-release-notes
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+      - skip-changelog
+    authors:
+      - dependabot
+      - github-actions
+  categories:
+    - title: "🚀 Features"
+      labels:
+        - feature
+        - enhancement
+    - title: "🐛 Fixes"
+      labels:
+        - fix
+        - bug
+    - title: "🔒 Security"
+      labels:
+        - security
+    - title: "📦 Dependencies"
+      labels:
+        - dependencies
+    - title: "📝 Documentation"
+      labels:
+        - documentation
+        - docs
+    - title: "🧰 Maintenance"
+      labels:
+        - chore
+        - ci
+        - refactor
+        - build
+    - title: "Other Changes"
+      labels:
+        - "*"

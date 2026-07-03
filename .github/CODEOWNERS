@@ -1,0 +1,11 @@
+# Code owners — required reviewers for sensitive paths.
+# Docs: https://docs.github.com/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners
+#
+# For this to be enforced, enable branch protection on `main` with
+# "Require review from Code Owners" (Settings → Branches → branch protection rule).
+
+# CI/CD workflows — changes require review from the repo admin.
+/.github/workflows/            @amgdy
+
+# The ownership rules themselves.
+/.github/CODEOWNERS            @amgdy
