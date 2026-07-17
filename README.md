@@ -276,13 +276,3 @@ Both modes call the GitHub Copilot Usage Metrics API (v2026-03-10) and transform
 ## License
 
 [MIT](LICENSE)
-
-docker run --rm -v "$(pwd):/tmp" ghcr.io/owasp-noir/noir:latest noir -b /tmp -f oas3 --no-log -o "/tmp/$(basename "$(git rev-parse --show-toplevel)")-api.json"
-
-# Scan with zaproxy/zap-stable
-TARGET_URL="https://copilot-insights.tools.pttep.com"
-
-docker run --rm -t -v "$(pwd)/$(basename "$(git rev-parse --show-toplevel)")-api.json:/zap/api.json" -v "$(pwd):/zap/wrk" \
-  zaproxy/zap-stable zap-baseline.py -t "$TARGET_URL" \
-  -r "$(basename "$(git rev-parse --show-toplevel)")-zap-report.html" \
-  -z "-openapifile /zap/api.json -openapitargeturl $TARGET_URL"
