@@ -152,3 +152,6 @@ blob-report/
 samples/
 .playwright-mcp/
 .private/
+github-copilot-insights-dashboard-api.json
+github-copilot-insights-dashboard-zap-report.html
+zap.yaml

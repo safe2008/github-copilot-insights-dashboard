@@ -1,6 +1,6 @@
 FROM node:24-alpine AS deps
 WORKDIR /app
-RUN corepack enable
+RUN npm config set strict-ssl false && npm install -g pnpm@11.5.1
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # Harden registry fetch against slow/flaky links (notably under cross-arch emulation).
 # A project .npmrc is the authoritative way to set these for pnpm.
@@ -9,9 +9,9 @@ RUN pnpm install --frozen-lockfile --ignore-scripts && pnpm store prune
 
 FROM node:24-alpine AS builder
 WORKDIR /app
-RUN corepack enable
+RUN npm config set strict-ssl false && npm install -g pnpm@11.5.1
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG BUILD_ID=1
 ARG BUILD_TIME

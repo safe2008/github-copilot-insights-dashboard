@@ -5,6 +5,11 @@ import { ThemeProvider } from "@/lib/theme/theme-provider";
 import { LocaleProvider } from "@/lib/i18n/locale-provider";
 import "./globals.css";
 
+// Render every page per-request so the CSP nonce injected by src/proxy.ts is
+// fresh each time; static prerendering would bake in a stale (blocked) nonce
+// and let responses be CDN-cached (ZAP: "Re-examine Cache-control Directives").
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "GitHub Copilot Insights",
   description:
